@@ -51,7 +51,7 @@ jobs:
           cp -r contracts/wave_milestone/src release-artifacts/src
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: WaveMilestone ${{ github.ref_name }}
           body: |
