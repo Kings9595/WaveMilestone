@@ -102,7 +102,7 @@ jobs:
           workspaces: |
             contracts/wave_milestone
 
-      - name: Build release WASM Build release WASM
+      - name: Build release WASM
         run: cargo build --release --target wasm32-unknown-unknown --package wave-milestone
 
       - name: Optimize WASM (wasm-opt)
