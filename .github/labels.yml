@@ -1,0 +1,160 @@
+# WaveMilestone Issue Label Taxonomy
+# This file defines the standardized labels for categorizing issues and PRs.
+# Labels are organized by category with consistent naming and colors.
+
+# ─────────────────────────────────────────────────────────────
+# Contract Area Labels (Core Functional Areas)
+# ─────────────────────────────────────────────────────────────
+- name: "area:pool-creation"
+  color: "1D76DB"
+  description: "Issues related to create_milestone_pool function and pool initialization"
+
+- name: "area:bounty-release"
+  color: "0E8A16"
+  description: "Issues related to release_issue_bounty function and micro-payouts"
+
+- name: "area:clawback"
+  color: "D93F0B"
+  description: "Issues related to clawback_expired_funds and fund recovery"
+
+- name: "area:view-methods"
+  color: "5319E7"
+  description: "Issues related to query methods (milestone_balance, is_claimed, milestone_info)"
+
+- name: "area:cross-contract"
+  color: "B60205"
+  description: "Issues related to WaveGuard, Token, or other external contract interfaces"
+
+- name: "area:events"
+  color: "FBCA04"
+  description: "Issues related to event emission, indexing, or off-chain consumption"
+
+- name: "area:storage"
+  color: "6F42C1"
+  description: "Issues related to storage layout, DataKey, Instance/Temporary storage"
+
+- name: "area:access-control"
+  color: "D4C5F9"
+  description: "Issues related to authorization, WaveGuard checks, maintainer validation"
+
+# ─────────────────────────────────────────────────────────────
+# Type Labels (Issue Classification)
+# ─────────────────────────────────────────────────────────────
+- name: "bug"
+  color: "D73A4A"
+  description: "Something isn't working as expected"
+
+- name: "enhancement"
+  color: "A2EEEF"
+  description: "New feature or improvement request"
+
+- name: "feature-request"
+  color: "1D76DB"
+  description: "Proposal for a new escrow workflow or contract capability"
+
+- name: "documentation"
+  color: "0075CA"
+  description: "Documentation improvements or additions"
+
+- name: "maintenance"
+  color: "F9D0C4"
+  description: "Routine maintenance, dependency updates, refactoring"
+
+- name: "security"
+  color: "EE0701"
+  description: "Security-related issues, vulnerabilities, or audit findings"
+
+- name: "testing"
+  color: "C2E0C6"
+  description: "Test coverage, test infrastructure, or test failures"
+
+- name: "performance"
+  color: "FEF2C0"
+  description: "Gas optimization, execution cost, or throughput improvements"
+
+# ─────────────────────────────────────────────────────────────
+# Priority Labels
+# ─────────────────────────────────────────────────────────────
+- name: "priority:critical"
+  color: "B60205"
+  description: "Critical issue blocking releases or causing fund loss"
+
+- name: "priority:high"
+  color: "D93F0B"
+  description: "High priority issue affecting core functionality"
+
+- name: "priority:medium"
+  color: "FBCA04"
+  description: "Medium priority issue with workaround available"
+
+- name: "priority:low"
+  color: "0E8A16"
+  description: "Low priority issue, nice to have"
+
+# ─────────────────────────────────────────────────────────────
+# Status Labels
+# ─────────────────────────────────────────────────────────────
+- name: "status:triage"
+  color: "FEF2C0"
+  description: "Issue needs triage and categorization"
+
+- name: "status:ready"
+  color: "0E8A16"
+  description: "Issue is ready for implementation"
+
+- name: "status:in-progress"
+  color: "1D76DB"
+  description: "Work has started on this issue"
+
+- name: "status:blocked"
+  color: "D93F0B"
+  description: "Issue is blocked by external dependency or another issue"
+
+- name: "status:review"
+  color: "5319E7"
+  description: "Implementation complete, awaiting code review"
+
+- name: "status:done"
+  color: "28A745"
+  description: "Issue resolved and merged"
+
+# ─────────────────────────────────────────────────────────────
+# Release Labels
+# ─────────────────────────────────────────────────────────────
+- name: "release:blocker"
+  color: "B60205"
+  description: "Must be fixed before next release"
+
+- name: "release:backport"
+  color: "FBCA04"
+  description: "Fix needs to be backported to a previous release branch"
+
+- name: "release:notes"
+  color: "5319E7"
+  description: "Requires entry in release notes"
+
+# ─────────────────────────────────────────────────────────────
+# Audit & Compliance Labels
+# ─────────────────────────────────────────────────────────────
+- name: "audit:required"
+  color: "EE0701"
+  description: "Changes require security audit before deployment"
+
+- name: "audit:completed"
+  color: "28A745"
+  description: "Audit completed for this change"
+
+- name: "audit:finding"
+  color: "D73A4A"
+  description: "Issue identified during security audit"
+
+# ─────────────────────────────────────────────────────────────
+# Good First Issue / Help Wanted
+# ─────────────────────────────────────────────────────────────
+- name: "good first issue"
+  color: "7057FF"
+  description: "Good for newcomers to the codebase"
+
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed from contributors"

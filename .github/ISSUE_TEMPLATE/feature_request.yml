@@ -1,0 +1,153 @@
+name: Feature Request
+description: Propose a new escrow workflow or enhancement for WaveMilestone
+title: "[Feature]: "
+labels: ["enhancement", "feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing a new feature! Please describe the escrow workflow or enhancement you'd like to see in WaveMilestone.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: A clear and concise summary of the proposed feature.
+      placeholder: Brief description of the feature...
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    motivation
+    attributes:
+      label: Motivation / Use Case
+      description: What problem does this solve? Why is this feature needed? Describe the use case.
+      placeholder: |
+        - What workflow does this enable?
+        - Who benefits from this feature?
+        - What existing limitations does it address?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: workflow_type
+    attributes:
+      label: Escrow Workflow Type
+      description: What type of escrow workflow does this feature relate to?
+      options:
+        - Milestone-based Funding (current model)
+        - Time-based Vesting / Streaming
+        - Multi-signature / Threshold Approvals
+        - Conditional Release (oracle-based, DAO voting, etc.)
+        - Recurring / Subscription Payments
+        - Dispute Resolution / Arbitration
+        - Partial / Progressive Releases
+        - Cross-chain Escrow
+        - Other / New Workflow Pattern
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like. Include technical details if possible.
+      placeholder: |
+        - New contract functions needed:
+        - New data structures / storage keys:
+        - New events to emit:
+        - Integration points (WaveGuard, tokens, oracles):
+        - Gas considerations:
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or workarounds you've considered.
+      placeholder: Alternative approaches...
+    validations:
+      required: false
+
+  - type: textarea
+    id: api_design
+    attributes:
+      label: API / Interface Design
+      description: Sketch the proposed contract interface (function signatures, parameters, return types).
+      placeholder: |
+        pub fn new_function(
+            env: Env,
+            param1: Type1,
+            param2: Type2,
+        ) -> Result<ReturnType, Error> { ... }
+      render: rust
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contract_area
+    attributes:
+      label: Contract Area Impact
+      description: Which contract areas would this feature touch?
+      options:
+        - Pool Creation (create_milestone_pool)
+        - Bounty Release (release_issue_bounty)
+        - Clawback (clawback_expired_funds)
+        - View/Query Methods
+        - New Contract Entry Points
+        - Cross-Contract Interfaces (WaveGuard, Token, Oracle)
+        - Events/Indexing
+        - Storage/State Management
+        - Access Control/Authorization
+        - Multiple Areas
+    validations:
+      required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security Considerations
+      description: What security implications should be considered? (reentrancy, access control, front-running, etc.)
+      placeholder: |
+        - Authorization checks needed:
+        - State mutation risks:
+        - External call risks:
+        - Economic attack vectors:
+    validations:
+      required: false
+
+  - type: textarea
+    id: testing
+    attributes:
+      label: Testing Strategy
+      description: How should this feature be tested?
+      placeholder: |
+        - Unit tests needed:
+        - Integration tests needed:
+        - Edge cases to cover:
+        - Fuzzing / property-based tests:
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context, mockups, references, or related issues.
+      placeholder: Links to specs, discussions, related PRs...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Checklist
+      options:
+        - label: I have searched existing issues and feature requests to avoid duplicates
+          required: true
+        - label: This feature aligns with WaveMilestone's scope (milestone escrow for open source)
+          required: true
+        - label: I have considered security implications
+          required: true
