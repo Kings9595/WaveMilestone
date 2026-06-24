@@ -301,23 +301,71 @@ The integration test suite covers:
 
 ## Testing
 
+### Quick Start
+
 ```bash
-# Run the full integration suite (requires Soroban CLI and test network)
+# Run all tests (unit + integration) with output
 cargo test -- --nocapture
 
-# Run a specific test
+# Run only unit tests
+cargo test --package wave-milestone --lib -- --nocapture
+
+# Run only integration tests
+cargo test --package wave-milestone --test '*' -- --nocapture
+
+# Run a specific test by name
 cargo test test_duplicate_claim_rejected -- --nocapture
 ```
 
-The integration tests deploy a **mock SAC token**, create a milestone pool, and simulate the full lifecycle:
+### Prerequisites for Integration Tests
 
-1. Deploy mock asset contract.
-2. Mint and transfer `total_funds` to WaveMilestone.
-3. Call `release_issue_bounty` for a set of issues.
-4. Assert that claimed issues are marked `completed` and recipient balances increased.
-5. Assert that duplicate claims revert with `BountyAlreadyClaimed`.
-6. Assert that over-allocation attempts revert gracefully without locking remaining assets.
-7. Assert that clawback returns remaining funds to the maintainer after expiry.
+Integration tests require the `wasm32-unknown-unknown` target:
+
+```bash
+rustup target add wasm32-unknown-unknown
+```
+
+### Running with Docker
+
+```bash
+# Run all tests in a Docker container
+docker compose -f docker/docker-compose.yml run --rm test
+```
+
+### Test Suite Details
+
+The test suite is organized into two categories:
+
+**Unit tests** (`contracts/wave_milestone/src/test.rs`):
+- Test individual function behavior and error paths
+- Validate input validation and authentication logic
+- Run quickly with no external dependencies
+
+**Integration tests** (`contracts/wave_milestone/tests/*.rs`):
+- Test cross-contract interactions with real Soroban environment
+- Deploy a **mock SAC token** and **mock WaveGuard** contract
+- Simulate the full milestone lifecycle
+
+### Integration Test Scenarios
+
+1. **Happy path** (`full_lifecycle.rs`): Create pool, fund, release bounty, verify recipient balance.
+2. **Duplicate claim** (`duplicate_claim.rs`): Attempt double-spend of the same issue ID → expect revert.
+3. **Over-allocation** (`over_allocation.rs`): Attempt payout exceeding pool balance → expect graceful revert with no asset loss.
+4. **Clawback** (`clawback.rs`): Claim expiry, return unclaimed funds to maintainer.
+5. **Unauthorized access** (`unauthorized_access.rs`): Non-maintainer addresses rejected.
+
+### Using the Test Script
+
+```bash
+# Run all tests via the convenience script
+./scripts/test.sh
+
+# Run a specific test
+./scripts/test.sh test_duplicate_claim_rejected
+
+# Run with environment overrides
+RUST_LOG=debug ./scripts/test.sh
+```
 
 ---
 

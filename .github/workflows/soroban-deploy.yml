@@ -1,0 +1,108 @@
+name: Soroban Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Stellar network to deploy to
+        required: true
+        default: testnet
+        type: choice
+        options:
+          - testnet
+          - mainnet
+      deploy_salt:
+        description: Optional hex-encoded 32-byte salt for deterministic deployment
+        required: false
+        type: string
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.network || 'testnet' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            contracts/wave_milestone
+
+      - name: Install Soroban CLI
+        uses: stellar/stellar-cli-action@v1
+        with:
+          version: "latest"
+
+      - name: Build contract WASM
+        run: |
+          cargo build --release --target wasm32-unknown-unknown --package wave-milestone
+          wasm-opt \
+            -Os \
+            --strip-debug \
+            --enable-bulk-memory \
+            target/wasm32-unknown-unknown/release/wave_milestone.wasm \
+            -o wave_milestone_optimized.wasm
+
+      - name: Deploy to testnet
+        if: ${{ github.event.inputs.network == 'testnet' || github.event.inputs.network == '' }}
+        env:
+          DEPLOYER_KEY: ${{ secrets.TESTNET_DEPLOYER_KEY }}
+          RPC_URL: ${{ secrets.TESTNET_RPC_URL || 'https://soroban-testnet.stellar.org' }}
+          NET_PASSPHRASE: ${{ secrets.TESTNET_NETWORK_PASSPHRASE || 'Test SDF Network ; September 2015' }}
+        run: |
+          CMD="soroban contract deploy \
+            --wasm wave_milestone_optimized.wasm \
+            --source \"$DEPLOYER_KEY\" \
+            --rpc-url \"$RPC_URL\" \
+            --network-passphrase \"$NET_PASSPHRASE\""
+          if [ -n "${{ github.event.inputs.deploy_salt }}" ]; then
+            CMD="$CMD --salt \"${{ github.event.inputs.deploy_salt }}\""
+          fi
+          CONTRACT_ID=$(eval "$CMD")
+          echo "Deployed WaveMilestone to testnet"
+          echo "Contract ID: $CONTRACT_ID"
+          echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+
+      - name: Deploy to mainnet
+        if: ${{ github.event.inputs.network == 'mainnet' }}
+        env:
+          DEPLOYER_KEY: ${{ secrets.MAINNET_DEPLOYER_KEY }}
+          RPC_URL: ${{ secrets.MAINNET_RPC_URL || 'https://soroban.stellar.org' }}
+          NET_PASSPHRASE: ${{ secrets.MAINNET_NETWORK_PASSPHRASE || 'Public Global Stellar Network ; September 2015' }}
+        run: |
+          CMD="soroban contract deploy \
+            --wasm wave_milestone_optimized.wasm \
+            --source \"$DEPLOYER_KEY\" \
+            --rpc-url \"$RPC_URL\" \
+            --network-passphrase \"$NET_PASSPHRASE\""
+          if [ -n "${{ github.event.inputs.deploy_salt }}" ]; then
+            CMD="$CMD --salt \"${{ github.event.inputs.deploy_salt }}\""
+          fi
+          CONTRACT_ID=$(eval "$CMD")
+          echo "Deployed WaveMilestone to mainnet"
+          echo "Contract ID: $CONTRACT_ID"
+          echo "CONTRACT_ID=$CONTRACT_ID" >> $GITHUB_ENV
+
+      - name: Save contract ID
+        run: |
+          echo "${{ env.CONTRACT_ID }}" > .contract-id
+          echo "Contract ID saved to .contract-id"
+
+      - name: Upload contract artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wave-milestone-wasm-${{ github.event.inputs.network || 'testnet' }}
+          path: |
+            wave_milestone_optimized.wasm
+            .contract-id
+          retention-days: 30
