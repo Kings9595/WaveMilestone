@@ -178,6 +178,46 @@ All new features must include:
 3. **Balance checks before transfers**: Never attempt a token transfer without confirming sufficient balance.
 4. **Duplicate protection**: All claim operations must check and set `completed` in the same atomic operation.
 
+## Contributing New Features
+
+When adding a new feature to the WaveMilestone contract or its surrounding tooling, follow these steps to ensure quality and consistency.
+
+### Before You Start
+
+1. **Open an issue first** using the [Contract Improvement template](../.github/ISSUE_TEMPLATE/contract-improvement.md) to discuss the feature with maintainers before writing code. This avoids duplicated effort and misaligned designs.
+2. **Read the architecture** — review [ARCHITECTURE.md](ARCHITECTURE.md) and the existing contract code so your feature integrates naturally with storage tiers, auth patterns, and the check-effects-interaction ordering.
+3. **Check security implications** — any feature that touches fund transfers, storage keys, or access control must be reviewed against [SECURITY.md](SECURITY.md).
+
+### Implementation Checklist
+
+- [ ] Feature discussed and approved in a GitHub issue.
+- [ ] New public contract method follows the **check-effects-interaction** ordering (validate → update state → emit event → transfer).
+- [ ] `require_auth()` is called on every new public method before any state mutation.
+- [ ] New error variants added to `types.rs` `Error` enum with a unique `u32` discriminant.
+- [ ] New storage keys added to `DataKey` enum in `types.rs`.
+- [ ] Events added to `events.rs` for all state-changing operations.
+- [ ] Unit tests added to `src/test.rs` covering happy path, error paths, and edge cases.
+- [ ] Integration tests added or updated in `contracts/wave_milestone/tests/`.
+- [ ] Documentation updated: README, ARCHITECTURE.md, and inline doc comments on all public items.
+- [ ] `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test --workspace` all pass.
+
+### Feature Branch Naming
+
+Use `feat/<short-description>`, e.g.:
+
+```bash
+git checkout -b feat/multi-asset-pool
+```
+
+### Keeping Your Branch Up to Date
+
+```bash
+git fetch upstream
+git rebase upstream/main
+```
+
+Rebase rather than merge to keep a clean history.
+
 ## Pull Request Process
 
 1. Ensure all tests pass and CI is green.

@@ -47,7 +47,42 @@ WaveMilestone is a smart contract that holds real assets in escrow. The primary 
 - Only the `pool.maintainer` (recorded at pool creation) can call clawback — even other registered maintainers cannot.
 - The expiry is set at pool creation and is immutable for the pool's lifetime.
 
-### 5. Reentrancy
+### 5. Transfer Failure Path Coverage
+
+**Risk**: A token transfer reverts mid-execution (e.g., the SAC contract panics or the contract's token balance is unexpectedly zero), leaving the contract in an inconsistent state — storage marked as paid but no tokens delivered, or vice versa.
+
+**Mitigation**:
+- The contract follows strict **check-effects-interaction** ordering in every payout path:
+  1. All inputs and auth validated (checks).
+  2. `pool.allocated_funds` incremented and `IssueClaim.completed` set to `true` (effects).
+  3. `token.transfer(...)` called last (interaction).
+- If `token.transfer(...)` panics, Soroban's host rolls back the entire transaction — storage writes are also reverted, so no funds are marked paid without being delivered.
+- The `TransferFailed` error variant (`Error::TransferFailed = 8`) is reserved for callers and wrappers that need to surface a transfer-specific error; the Soroban host itself guarantees atomicity at the host level.
+- `clawback_expired_funds` follows the same ordering: state is zeroed before the transfer, and a host-level panic reverts both atomically.
+
+**Audit verification**:
+- Confirm `token.transfer(...)` is always the **last** statement in `release_issue_bounty` and `clawback_expired_funds`.
+- Confirm no storage write occurs after a `token.transfer(...)` call.
+- Confirm `Error::TransferFailed` is not silently swallowed anywhere in calling code.
+
+### 6. Expiry-Based Clawback Security
+
+**Risk**: Incorrect expiry handling allows either (a) a maintainer to reclaim funds prematurely while issues are still open, or (b) funds to be permanently locked if the expiry check contains an off-by-one or is bypassable.
+
+**Mitigation**:
+- `clawback_expired_funds` enforces a strict `now >= pool.expiry` check using `env.ledger().timestamp()`, which is the Soroban-provided ledger close time — it cannot be manipulated by the caller.
+- Only the address recorded as `pool.maintainer` at pool creation can trigger clawback; other registered maintainers are explicitly rejected (`Error::UnauthorizedCaller`).
+- The expiry timestamp is validated at pool creation (`expiry > now`) so a zero or past expiry cannot be stored.
+- Once clawback succeeds, `pool.total_funds` is set to `pool.allocated_funds`, effectively closing the pool with a remaining balance of zero — future clawback calls return `Error::NoFundsToClawback` rather than re-entering the transfer path.
+- Contributors should be aware that **any unclaimed issue bounties become unclaimable once clawback has executed**. Maintainers must ensure all legitimate claims are settled before the expiry deadline, or use a sufficiently long expiry window (recommend at least 30 days beyond the milestone end date).
+
+**Audit verification**:
+- Confirm `now >= pool.expiry` (not `>`) to include the exact expiry ledger second.
+- Confirm only `pool.maintainer` — not any WaveGuard-registered maintainer — can call clawback.
+- Confirm `pool.expiry > now` is enforced at creation time.
+- Confirm post-clawback pool state prevents double-clawback.
+
+### 7. Reentrancy
 
 **Risk**: A malicious token contract calls back into WaveMilestone during `transfer()`.
 
@@ -60,7 +95,7 @@ WaveMilestone is a smart contract that holds real assets in escrow. The primary 
 - Token transfers are the final operation. Any reentrant call would see already-updated state and cannot claim the same issue twice.
 - Soroban's environment provides additional reentrancy protection at the host level.
 
-### 6. Front-Running
+### 8. Front-Running
 
 **Risk**: An attacker observes a pending `release_issue_bounty` and front-runs it with a higher gas payment to claim the bounty for themselves.
 
