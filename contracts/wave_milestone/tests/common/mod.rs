@@ -45,11 +45,7 @@ impl TestContext {
         let token_id = env.register(mock_token::MockToken, ());
         MockTokenClient::new(&env, &token_id).init(&maintainer);
 
-#89-Add-CI-check-for-Soroban-contract-build-FIX
-        let contract_id = env.register(wave_milestone::WaveMilestoneContract, ());
-
         let contract_id = env.register(WaveMilestoneContract, ());
-main
 
         let repo_hash = BytesN::from_array(&env, &[0u8; 32]);
         let repo_hash_two = BytesN::from_array(&env, &[1u8; 32]);
@@ -73,13 +69,6 @@ main
 
     pub fn fund_pool(&self, amount: u128) {
         MockTokenClient::new(&self.env, &self.token_id).mint(&self.maintainer, &amount);
-#89-Add-CI-check-for-Soroban-contract-build-FIX
-        self.client().create_milestone_pool(&self.maintainer, &self.guard_id, &self.token_id, &amount, &self.expiry);
-    }
-
-    pub fn client(&self) -> wave_milestone::WaveMilestoneContractClient<'_> {
-        wave_milestone::WaveMilestoneContractClient::new(&self.env, &self.contract_id)
-
         self.client().create_milestone_pool(
             &self.maintainer,
             &self.guard_id,
@@ -91,7 +80,6 @@ main
 
     pub fn client(&self) -> WaveMilestoneContractClient<'_> {
         WaveMilestoneContractClient::new(&self.env, &self.contract_id)
- main
     }
 
     pub fn token_client(&self) -> MockTokenClient<'_> {

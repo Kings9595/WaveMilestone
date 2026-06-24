@@ -659,7 +659,7 @@ fn test_recreate_pool_overwrites_existing_accounting() {
 
     // The maintainer re-creates the pool with a fresh (smaller) deposit.
     let second_size: u128 = 1_000_000_000;
-    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, second_size);
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &second_size);
     WaveMilestoneContractClient::new(&t.env, &t.contract_id).create_milestone_pool(
         &t.maintainer,
         &t.guard_id,
