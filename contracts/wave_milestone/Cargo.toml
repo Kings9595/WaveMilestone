@@ -18,10 +18,10 @@ doctest = false
 workspace = true
 
 [dependencies]
-soroban-sdk = { workspace = true, features = ["dep"] }
+soroban-sdk = { workspace = true }
 
 [dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils", "dep"] }
+soroban-sdk = { workspace = true, features = ["testutils"] }
 
 [features]
 default = []

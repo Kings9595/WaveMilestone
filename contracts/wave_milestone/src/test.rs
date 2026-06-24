@@ -39,6 +39,14 @@ impl MockWaveGuard {
             .instance()
             .set(&MockGuardKey::Maintainer(address), &true);
     }
+
+    /// Revokes maintainer status — models a maintainer being removed from
+    /// the WaveGuard registry (e.g. after going rogue or losing access).
+    pub fn remove_maintainer(env: Env, address: Address) {
+        env.storage()
+            .instance()
+            .set(&MockGuardKey::Maintainer(address), &false);
+    }
 }
 
 #[contracttype]
@@ -477,4 +485,257 @@ fn test_release_issue_bounty_pool_not_found() {
         );
 
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Malicious / Rogue Maintainer Scenarios (Issue #110)
+// ─────────────────────────────────────────────────────────────
+//
+// A maintainer is a privileged actor: they fund pools, release bounties,
+// and reclaim expired escrow. These tests pin down what a *rogue* maintainer
+// — or one whose privileges have been revoked — can and cannot do, so any
+// future change to the authorization model is caught by CI.
+
+/// A maintainer removed from the WaveGuard registry can no longer release
+/// new bounties: the on-chain `is_maintainer` check must be re-evaluated on
+/// every call, not cached at pool-creation time.
+#[test]
+fn test_revoked_maintainer_cannot_release_bounty() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    fund_pool(&t, pool_size);
+
+    // Maintainer goes rogue and is stripped of registry access.
+    MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
+
+    let result =
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+            &t.maintainer,
+            &t.repo_hash,
+            &1u32,
+            &t.developer,
+            &1_000_000_000,
+        );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+
+    // Pool must be untouched — no funds leaked.
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, pool_size);
+}
+
+/// Revoking registry access must NOT strip the original maintainer of their
+/// own escrowed funds. After expiry they can still claw back what they
+/// deposited — clawback is gated on pool ownership, not registry membership.
+#[test]
+fn test_revoked_maintainer_can_still_clawback_own_funds() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    fund_pool(&t, pool_size);
+
+    MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
+    t.env.ledger().set_timestamp(t.expiry + 1);
+
+    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
+    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+
+    assert_eq!(after - before, pool_size);
+}
+
+/// A second, separately-authorized maintainer (a colluding or rogue
+/// co-maintainer) must NOT be able to claw back a pool they did not create.
+/// Clawback is restricted to the exact `pool.maintainer` address.
+#[test]
+fn test_rogue_co_maintainer_cannot_clawback_others_pool() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    fund_pool(&t, pool_size);
+
+    // `stranger` is promoted to a registry maintainer, but is not the pool owner.
+    MockWaveGuardClient::new(&t.env, &t.guard_id).add_maintainer(&t.stranger);
+    t.env.ledger().set_timestamp(t.expiry + 1);
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
+        .try_clawback_expired_funds(&t.stranger);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+
+    // Escrow stays put for the rightful owner.
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, pool_size);
+}
+
+/// Characterization: bounty release is authorized by WaveGuard membership,
+/// NOT by pool ownership. Any address the registry trusts as a maintainer can
+/// release from the pool. This documents the shared-maintainer trust model so
+/// that tightening it (e.g. restricting release to `pool.maintainer`) is a
+/// deliberate, test-visible change rather than a silent regression.
+#[test]
+fn test_co_maintainer_can_release_bounty() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 1_000_000_000;
+    fund_pool(&t, pool_size);
+
+    MockWaveGuardClient::new(&t.env, &t.guard_id).add_maintainer(&t.stranger);
+
+    // A different maintainer than the pool creator releases the bounty.
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.stranger,
+        &t.repo_hash,
+        &7u32,
+        &t.developer,
+        &bounty,
+    );
+
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, pool_size - bounty);
+}
+
+/// Characterization / self-dealing: the contract does not prevent a
+/// maintainer from naming themselves as the `developer` and paying the bounty
+/// to their own address. On-chain there is no separation-of-duties guard;
+/// trust is delegated to WaveGuard governance. This test makes that explicit
+/// so a future on-chain mitigation is caught.
+#[test]
+fn test_maintainer_self_payout_is_not_blocked() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 4_000_000_000;
+    fund_pool(&t, pool_size);
+
+    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.maintainer, // developer == maintainer
+        &bounty,
+    );
+
+    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+    assert_eq!(after - before, bounty);
+}
+
+/// A maintainer cannot drain more than they deposited by calling clawback
+/// twice: the first call zeroes the spendable balance, the second is rejected.
+#[test]
+fn test_double_clawback_rejected() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    fund_pool(&t, pool_size);
+
+    t.env.ledger().set_timestamp(t.expiry + 1);
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
+        .try_clawback_expired_funds(&t.maintainer);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::NoFundsToClawback));
+}
+
+/// After reclaiming the escrow via clawback, a maintainer must not be able to
+/// keep paying out bounties — the spendable balance is gone.
+#[test]
+fn test_no_release_after_clawback_drains_pool() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    fund_pool(&t, pool_size);
+
+    t.env.ledger().set_timestamp(t.expiry + 1);
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
+
+    let result =
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+            &t.maintainer,
+            &t.repo_hash,
+            &1u32,
+            &t.developer,
+            &1u128,
+        );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+}
+
+/// Boundary: a maintainer may release exactly the remaining balance, but not
+/// one unit more. Confirms the pool cannot be over-drawn across issues.
+#[test]
+fn test_drain_pool_to_zero_then_release_fails() {
+    let t = setup();
+    let pool_size: u128 = 5_000_000_000;
+    fund_pool(&t, pool_size);
+
+    // Release the entire pool in one bounty (amount == remaining is allowed).
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &pool_size,
+    );
+
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, 0);
+
+    // Any further payout, even the smallest unit, must be rejected.
+    let result =
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+            &t.maintainer,
+            &t.repo_hash,
+            &2u32,
+            &t.developer,
+            &1u128,
+        );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+}
+
+/// Characterization of a robustness gap: `create_milestone_pool` overwrites
+/// any existing pool without an "already initialized" guard. A maintainer can
+/// re-create the pool, which resets `allocated_funds` to zero and replaces the
+/// stored accounting. Prior bounty allocations are forgotten even though those
+/// tokens already left the vault.
+///
+/// This test pins the *current* behavior. If an init-guard
+/// (e.g. `Error::PoolAlreadyExists`) is later added, update this test — the
+/// failure is the signal that the gap was closed.
+#[test]
+fn test_recreate_pool_overwrites_existing_accounting() {
+    let t = setup();
+    let first_size: u128 = 10_000_000_000;
+    let bounty: u128 = 3_000_000_000;
+    fund_pool(&t, first_size);
+
+    // A real bounty is paid out, so allocated_funds advances.
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+
+    // The maintainer re-creates the pool with a fresh (smaller) deposit.
+    let second_size: u128 = 1_000_000_000;
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, second_size);
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).create_milestone_pool(
+        &t.maintainer,
+        &t.guard_id,
+        &t.token_id,
+        &second_size,
+        &t.expiry,
+    );
+
+    // Accounting was clobbered: allocation reset to 0 and balance now reflects
+    // only the second deposit, despite the earlier bounty having been paid.
+    let pool = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
+        .milestone_info()
+        .unwrap();
+    assert_eq!(pool.total_funds, second_size);
+    assert_eq!(pool.allocated_funds, 0);
+
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, second_size);
 }
