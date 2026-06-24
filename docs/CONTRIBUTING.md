@@ -13,6 +13,82 @@ By participating, you agree to uphold a respectful, inclusive environment. Haras
 3. Run `./scripts/setup.sh` to install tooling and verify the build.
 4. Create a feature branch: `git checkout -b feat/my-feature`
 
+## Contributor Onboarding
+
+Welcome to WaveMilestone! This guide will help you get started with contributing to the project.
+
+### Initial Setup
+
+1. **Install Required Tools**
+   - Rust (1.81+): https://www.rust-lang.org/tools/install
+   - Git: https://git-scm.com/downloads
+   - Soroban CLI: https://soroban.stellar.org/docs/getting-started/setup
+
+2. **Environment Setup**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/anomalyco/wave-milestone.git
+   cd wave-milestone
+   
+   # Install pre-commit hooks
+   pre-commit install --hook-type pre-commit --hook-type pre-push
+   
+   # Run initial checks
+   ./scripts/setup.sh
+   ```
+
+3. **Understanding the Project**
+   - Read the [Architecture Overview](ARCHITECTURE.md) to understand the contract design
+   - Review the [Security Guidelines](SECURITY.md) to understand security considerations
+   - Explore the [Testing](README.md#testing) section to understand the test suite
+
+### First Contribution
+
+1. **Find an Issue**
+   - Browse [GitHub Issues](https://github.com/anomalyco/wave-milestone/issues)
+   - Look for issues labeled `good first issue` or `help wanted`
+   - If unsure, ask in a comment and we'll guide you
+
+2. **Start with Documentation**
+   - Documentation improvements are always valuable
+   - Fix typos, add examples, or improve existing documentation
+   - These changes help the entire community
+
+3. **Fix a Bug**
+   - Look for bugs or edge cases in the test suite
+   - Write a failing test first, then fix the implementation
+   - This helps ensure we don't regress
+
+4. **Add a Feature**
+   - Choose a feature that aligns with the project's goals
+   - Implement the feature with comprehensive tests
+   - Update documentation as needed
+
+### Code Review Process
+
+1. **Submit a Draft PR**
+   - Create a Pull Request with your changes
+   - Add screenshots or examples if helpful
+   - Request a review from the maintainers
+
+2. **Address Feedback**
+   - Be open to suggestions for improvement
+   - Make iterative changes until the PR is ready
+   - Ensure all tests pass before merging
+
+3. **Final Review**
+   - All tests pass
+   - Code follows project conventions
+   - Documentation is updated
+   - No linting or type-checking errors
+
+### Getting Help
+
+If you have questions:
+- Check the existing [discussions](https://github.com/anomalyco/wave-milestone/discussions)
+- Open an issue with your question
+- Reach out to the maintainers directly
+
 ## Development Workflow
 
 ### Branch Naming

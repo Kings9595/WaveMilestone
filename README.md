@@ -12,6 +12,7 @@ Built on Stellar Soroban and designed to integrate with [WaveGuard](https://gith
 
 ## Table of Contents
 
+- [Project Purpose](#project-purpose)
 - [Why WaveMilestone?](#why-wavemilestone)
 - [Target Users](#target-users)
 - [Architecture Overview](#architecture-overview)
@@ -36,15 +37,39 @@ Built on Stellar Soroban and designed to integrate with [WaveGuard](https://gith
 
 ---
 
-## Why WaveMilestone?
+## Project Purpose
 
-Traditional open-source milestone payouts rely on manual processing at arbitrary intervals (end-of-sprint, end-of-month). This creates:
+WaveMilestone is an **automated milestone & issue escrow release** system designed to solve the fundamental problem of **predictable cash flow in time-boxed open-source development**. It bridges the gap between engineering velocity and financial settlement, ensuring that contributor compensation keeps pace with sprint cycles.
 
-- **Payment lag** – Contributors wait days or weeks for compensation.
-- **Administrative overhead** – Maintainers manually reconcile PRs against payout lists.
-- **Momentum breaks** – Financial closure is decoupled from engineering progress.
+### Core Mission
 
-WaveMilestone solves this by linking a **Stellar asset escrow vault** directly to a GitHub Milestone. Each issue within the milestone carries a defined payout. When the PR merges and the issue closes, any authorized maintainer can trigger an immediate, trustless micro-payout to the contributor.
+In modern open-source projects, especially within the Stellar ecosystem, teams operate in intensive, time-boxed sprints (e.g., 1-week cycles). Traditional milestone payout systems create friction by:
+
+1. **Decoupling financial settlement from engineering progress**
+2. **Creating administrative bottlenecks** at arbitrary intervals
+3. **Breaking development momentum** with payment delays
+
+WaveMilestone addresses this by implementing a **trustless, on-chain escrow system** that automatically releases micro-payouts when engineering work is completed, eliminating manual reconciliation and end-of-month bottlenecks.
+
+### Why This Matters in the Stellar Ecosystem
+
+During intensive development sprints, predictable cash flow is as critical as predictable code flow. WaveMilestone ensures that **financial settlement keeps pace with engineering velocity**, removing the most common friction point in contributor retention and enabling sustainable open-source development.
+
+### Target Impact
+
+- **For Contributors**: Receive instant, on-chain payments the moment their PR is merged — no waiting for end-of-month processing.
+- **For Maintainers**: Automate financial closure alongside every PR merge, reducing administrative overhead and maintaining sprint momentum.
+- **For the Ecosystem**: Establish a reliable, trustless payment infrastructure that scales with open-source development velocity.
+
+### Technical Philosophy
+
+WaveMilestone is built on three core principles:
+
+1. **Automation**: Eliminate manual processes through smart contract automation
+2. **Trustlessness**: Use blockchain technology to remove counterparty risk
+3. **Speed**: Enable micro-payouts that settle in near real-time
+
+This foundation enables a new paradigm where financial settlement is an automatic byproduct of engineering progress, not a separate administrative task.
 
 ### Why It Matters in the Stellar Ecosystem
 
