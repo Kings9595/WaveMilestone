@@ -109,7 +109,7 @@ fn setup() -> TestEnv {
 
     let contract_id = env.register(WaveMilestoneContract, ());
 
-    let repo_hash = BytesN::from_array(&env, &[0u8; 32]);
+    let repo_hash = BytesN::from_array(&env, &[1u8; 32]);
     let expiry = env.ledger().timestamp() + 2_592_000;
 
     TestEnv { env, maintainer, developer, stranger, contract_id, guard_id, token_id, repo_hash, expiry }
@@ -374,7 +374,7 @@ fn test_non_maintainer_cannot_create_pool() {
 fn test_multiple_issues_different_repos_independent() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
-    let repo_b = BytesN::from_array(&t.env, &[1u8; 32]);
+    let repo_b = BytesN::from_array(&t.env, &[2u8; 32]);
 
     fund_pool(&t, pool_size);
 
@@ -678,4 +678,45 @@ fn test_recreate_pool_overwrites_existing_accounting() {
 
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
     assert_eq!(remaining, second_size);
+}
+
+// ─────────────────────────────────────────────────────────────
+// repo_hash Guard Rail Tests (Issue #105)
+// ─────────────────────────────────────────────────────────────
+
+/// An all-zero repo_hash is the canonical null/unset value and must be
+/// rejected before any pool or storage lookup occurs.
+#[test]
+fn test_release_bounty_rejects_zero_repo_hash() {
+    let t = setup();
+    fund_pool(&t, 10_000_000_000);
+
+    let zero_hash = BytesN::from_array(&t.env, &[0u8; 32]);
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.maintainer,
+        &zero_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidRepoHash));
+}
+
+/// A non-zero repo_hash must pass validation and proceed normally.
+#[test]
+fn test_release_bounty_accepts_nonzero_repo_hash() {
+    let t = setup();
+    fund_pool(&t, 10_000_000_000);
+
+    // t.repo_hash is [1u8; 32] — non-zero, must succeed
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
 }
