@@ -3,6 +3,7 @@
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.81+-orange.svg)](https://www.rust-lang.org)
 [![Soroban](https://img.shields.io/badge/Soroban-SDK%200.11+-blueviolet.svg)](https://soroban.stellar.org)
+[![CI](https://github.com/Kings9595/WaveMilestone/actions/workflows/ci.yml/badge.svg)](https://github.com/Kings9595/WaveMilestone/actions/workflows/ci.yml)
 
 **Automated Milestone & Issue Escrow Release** – WaveMilestone lets repository maintainers lock an asset budget against a GitHub Milestone. When issues tied to that milestone are closed and merged, the contract automatically releases micro-payouts to developers — no manual reconciliation, no end-of-month bottlenecks.
 
