@@ -84,3 +84,22 @@ fn test_clawback_pool_not_found() {
 
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
+
+#[test]
+fn test_release_bounty_after_clawback_rejected() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    ctx.advance_to_expiry();
+    ctx.client().clawback_expired_funds(&ctx.maintainer);
+
+    let result = ctx.client().try_release_issue_bounty(
+        &ctx.maintainer,
+        &ctx.repo_hash,
+        &1u32,
+        &ctx.developer,
+        &DEFAULT_BOUNTY,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+}
