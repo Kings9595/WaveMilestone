@@ -139,10 +139,7 @@ impl WaveMilestoneContract {
 
         // ── Fund transfer ──
         let token = TokenClient::new(&env, &asset);
-        token
-            .try_transfer(&maintainer, &env.current_contract_address(), &total_funds)
-            .map_err(|_| Error::TransferFailed)?
-            .map_err(|_| Error::TransferFailed)?;
+        token.transfer(&maintainer, &env.current_contract_address(), &total_funds);
 
         // ── Persist pool ──
         let pool = MilestonePool {
@@ -276,10 +273,7 @@ impl WaveMilestoneContract {
 
         // ── Transfer tokens ──
         let token = TokenClient::new(&env, &pool.asset);
-        token
-            .try_transfer(&env.current_contract_address(), &developer, &amount)
-            .map_err(|_| Error::TransferFailed)?
-            .map_err(|_| Error::TransferFailed)?;
+        token.transfer(&env.current_contract_address(), &developer, &amount);
 
         // ── Update pool state ──
         pool.allocated_funds = pool.allocated_funds.checked_add(amount).ok_or(Error::InvalidAmount)?;
@@ -338,10 +332,7 @@ impl WaveMilestoneContract {
         }
 
         let token = TokenClient::new(&env, &pool.asset);
-        token
-            .try_transfer(&env.current_contract_address(), &maintainer, &remaining)
-            .map_err(|_| Error::TransferFailed)?
-            .map_err(|_| Error::TransferFailed)?;
+        token.transfer(&env.current_contract_address(), &maintainer, &remaining);
 
         pool.total_funds = pool.allocated_funds;
         env.storage().instance().set(&DataKey::Pool, &pool);
