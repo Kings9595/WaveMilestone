@@ -52,6 +52,21 @@ fn test_create_pool_rejects_unauthorized() {
 }
 
 #[test]
+fn test_create_pool_rejects_removed_maintainer() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+
+    // Remove the maintainer from WaveGuard
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
+    ctx.token_client().mint(&ctx.maintainer, &pool_size);
+
+    let result =
+        ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &pool_size, &ctx.expiry);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+}
+
+#[test]
 fn test_create_pool_rejects_past_expiry() {
     let ctx = TestContext::new();
     let pool_size = DEFAULT_POOL_FUNDS;
