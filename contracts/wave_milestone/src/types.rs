@@ -103,6 +103,9 @@ pub enum Error {
     TransferFailed = 8,
     InvalidAmount = 9,
     ExpiryInPast = 10,
+    /// Returned when `guard_contract` passed to `create_milestone_pool` is the
+    /// zero address or otherwise unusable as a WaveGuard registry.
+    MissingGuardContract = 11,
 }
 
 // ─────────────────────────────────────────────────────────────

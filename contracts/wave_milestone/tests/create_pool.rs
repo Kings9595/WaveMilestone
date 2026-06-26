@@ -64,3 +64,21 @@ fn test_create_pool_rejects_past_expiry() {
 
     assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
 }
+
+#[test]
+fn test_create_pool_rejects_self_as_guard_contract() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+    ctx.token_client().mint(&ctx.maintainer, &pool_size);
+
+    // Passing the contract's own address as guard_contract is invalid.
+    let result = ctx.client().try_create_milestone_pool(
+        &ctx.maintainer,
+        &ctx.contract_id,
+        &ctx.token_id,
+        &pool_size,
+        &ctx.expiry,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::MissingGuardContract));
+}

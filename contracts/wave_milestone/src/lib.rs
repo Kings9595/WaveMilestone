@@ -108,6 +108,11 @@ impl WaveMilestoneContract {
         // ── AUTH GATE 1/2: Stellar signature check ──
         maintainer.require_auth();
 
+        // ── Guard contract validation ──
+        if guard_contract == env.current_contract_address() {
+            return Err(Error::MissingGuardContract);
+        }
+
         // ── AUTH GATE 2/2: WaveGuard registry check ──
         let guard = WaveGuardClient::new(&env, &guard_contract);
         if !guard.is_maintainer(&maintainer) {
