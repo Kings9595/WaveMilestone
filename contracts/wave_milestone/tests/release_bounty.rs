@@ -57,19 +57,20 @@ fn test_release_bounty_non_maintainer_rejected() {
 }
 
 #[test]
-fn test_release_bounty_contract_address_as_developer_rejected() {
+fn test_release_bounty_removed_maintainer_rejected() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
 
-    let result = ctx.client().try_release_issue_bounty(
-        &ctx.maintainer,
-        &ctx.repo_hash,
-        &1u32,
-        &ctx.contract_id, // contract's own address — tokens would be locked
-        &DEFAULT_BOUNTY,
-    );
+    // Remove maintainer from WaveGuard after pool creation
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidDeveloper));
+    let result =
+        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &DEFAULT_BOUNTY);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+
+    // Pool must be untouched
+    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
 }
 
 #[test]
