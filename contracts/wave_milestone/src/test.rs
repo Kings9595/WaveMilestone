@@ -427,6 +427,23 @@ fn test_release_issue_bounty_pool_not_found() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
+#[test]
+fn test_wrong_maintainer_cannot_release_bounty() {
+    let t = setup();
+    fund_pool(&t, 10_000_000_000);
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.stranger,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(), 10_000_000_000);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Malicious / Rogue Maintainer Scenarios (Issue #110)
 // ─────────────────────────────────────────────────────────────
