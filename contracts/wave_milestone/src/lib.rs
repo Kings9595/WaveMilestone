@@ -75,6 +75,61 @@ use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardCli
 /// migration: entries created before this fix (Temporary) are distinct from
 /// entries created after (Persistent) and may co-exist during a migration
 /// window on live networks.
+///
+/// ## WaveGuard Authorization Flow
+///
+/// WaveMilestone delegates identity and access control to an external
+/// **WaveGuard** registry contract.  The flow is:
+///
+/// 1. **Pool creation** (`create_milestone_pool`)
+///    The caller proves their maintainer status by passing the
+///    WaveGuard `is_maintainer` check.  The guard contract address is
+///    recorded in `pool.guard_contract` and is **immutable** for the
+///    lifetime of that pool.
+///
+/// 2. **Bounty release** (`release_issue_bounty`)
+///    Every call re-evaluates `is_maintainer` against the stored
+///    `pool.guard_contract`.  There is **no** cached authorisation —
+///    a maintainer whose WaveGuard membership is revoked between
+///    pool creation and bounty release is blocked from paying out.
+///    This ensures that off-chain governance actions (removing a
+///    rogue maintainer) take effect immediately on-chain.
+///
+/// 3. **Clawback** (`clawback_expired_funds`)
+///    WaveGuard is **not** consulted.  Clawback is gated on direct
+///    address equality with `pool.maintainer`.  This deliberate
+///    asymmetry isolates the refund path from a compromised
+///    WaveGuard, so the original depositor can always recover
+///    unclaimed funds.
+///
+/// ```
+///                    ┌──────────────┐
+///                    │  WaveGuard   │  (external access registry)
+///                    │ is_maintainer│
+///                    └──────┬───────┘
+///                           │ ① create_milestone_pool
+///                           │ ② release_issue_bounty
+///                           ▼
+///                    ┌──────────────┐
+///                    │ WaveMilestone│  (this contract)
+///                    │  escrow vault│
+///                    └──────┬───────┘
+///                           │ ③ transfer (SAC)
+///                           ▼
+///                    ┌──────────────┐
+///                    │    Token     │  (Stellar Asset Contract)
+///                    └──────────────┘
+/// ```
+///
+/// **Key security properties:**
+/// - The WaveGuard address is fixed at pool creation; it cannot be
+///   rotated mid-lifecycle.
+/// - Maintainer checks are **live** — each privileged call re-queries
+///   the registry, not the pool snapshot.
+/// - Clawback uses a separate authorisation path (address equality)
+///   so that a WaveGuard compromise cannot drain the escrow.
+/// - Failed maintainer checks emit a `maintainer_auth_failed` event
+///   to support off-chain alerting and forensics.
 #[contract]
 pub struct WaveMilestoneContract;
 
