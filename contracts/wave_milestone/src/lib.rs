@@ -12,6 +12,17 @@ use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
 use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardClient};
 
+/// Checks that `address` is registered as an active maintainer in the
+/// WaveGuard registry at `guard_contract`.  Returns
+/// `Err(Error::UnauthorizedMaintainer)` if not.
+fn ensure_is_maintainer(env: &Env, guard_contract: &Address, address: &Address) -> Result<(), Error> {
+    let guard = WaveGuardClient::new(env, guard_contract);
+    if !guard.is_maintainer(address) {
+        return Err(Error::UnauthorizedMaintainer);
+    }
+    Ok(())
+}
+
 // ─────────────────────────────────────────────────────────────
 // Contract Entry Point
 // ─────────────────────────────────────────────────────────────
@@ -109,10 +120,7 @@ impl WaveMilestoneContract {
         maintainer.require_auth();
 
         // ── WaveGuard validation ──
-        let guard = WaveGuardClient::new(&env, &guard_contract);
-        if !guard.is_maintainer(&maintainer) {
-            return Err(Error::UnauthorizedMaintainer);
-        }
+        ensure_is_maintainer(&env, &guard_contract, &maintainer)?;
 
         // ── Input validation ──
         if total_funds == 0 {
@@ -189,10 +197,7 @@ impl WaveMilestoneContract {
             .ok_or(Error::PoolNotFound)?;
 
         // ── WaveGuard validation ──
-        let guard = WaveGuardClient::new(&env, &pool.guard_contract);
-        if !guard.is_maintainer(&maintainer) {
-            return Err(Error::UnauthorizedMaintainer);
-        }
+        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
         // SECURITY: Must use Persistent storage here. Temporary storage entries
@@ -243,19 +248,15 @@ impl WaveMilestoneContract {
 
     /// Returns unclaimed funds to the maintainer after milestone expiry.
     ///
-    /// Only callable by the original `pool.maintainer` and only after
-    /// `pool.expiry` has passed. Transfers the full remaining balance
-    /// back to the maintainer and zeroes out the available pool.
+    /// Only callable by the original `pool.maintainer` while they remain an
+    /// active WaveGuard maintainer, and only after `pool.expiry` has passed.
+    /// Transfers the full remaining balance back to the maintainer and zeroes
+    /// out the available pool.
     ///
     /// # Auth
     /// - `maintainer.require_auth()` — the caller must sign.
+    /// - WaveGuard `is_maintainer` check passes.
     /// - `maintainer` must match `pool.maintainer` (address equality check).
-    ///
-    /// # Trust Assumptions
-    /// - Only the address stored as `pool.maintainer` at creation time can
-    ///   trigger clawback.  WaveGuard is NOT consulted here — the check is
-    ///   a direct address comparison so that a WaveGuard compromise cannot
-    ///   reroute funds via this path.
     pub fn clawback_expired_funds(env: Env, maintainer: Address) -> Result<(), Error> {
         maintainer.require_auth();
 
@@ -264,6 +265,9 @@ impl WaveMilestoneContract {
             .instance()
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
+
+        // ── WaveGuard validation ──
+        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         if maintainer != pool.maintainer {
             return Err(Error::UnauthorizedCaller);

@@ -35,7 +35,7 @@ fn test_stranger_cannot_clawback() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
 #[test]

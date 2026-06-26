@@ -56,6 +56,23 @@ fn test_release_bounty_non_maintainer_rejected() {
 }
 
 #[test]
+fn test_release_bounty_removed_maintainer_rejected() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    // Remove maintainer from WaveGuard after pool creation
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
+
+    let result =
+        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &DEFAULT_BOUNTY);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+
+    // Pool must be untouched
+    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
+}
+
+#[test]
 fn test_consecutive_bounties_different_issues() {
     let ctx = TestContext::new();
     let pool_size = DEFAULT_POOL_FUNDS;

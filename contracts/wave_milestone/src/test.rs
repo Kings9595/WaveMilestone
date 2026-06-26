@@ -349,7 +349,7 @@ fn test_unauthorized_caller_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
 #[test]
@@ -464,11 +464,11 @@ fn test_revoked_maintainer_cannot_release_bounty() {
     assert_eq!(remaining, pool_size);
 }
 
-/// Revoking registry access must NOT strip the original maintainer of their
-/// own escrowed funds. After expiry they can still claw back what they
-/// deposited — clawback is gated on pool ownership, not registry membership.
+/// A maintainer removed from the WaveGuard registry can no longer claw
+/// back expired funds — clawback now requires active registry membership
+/// in addition to pool ownership.
 #[test]
-fn test_revoked_maintainer_can_still_clawback_own_funds() {
+fn test_revoked_maintainer_cannot_clawback() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
     fund_pool(&t, pool_size);
@@ -476,11 +476,14 @@ fn test_revoked_maintainer_can_still_clawback_own_funds() {
     MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
     t.env.ledger().set_timestamp(t.expiry + 1);
 
-    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
-    WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
-    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
+        .try_clawback_expired_funds(&t.maintainer);
 
-    assert_eq!(after - before, pool_size as i128);
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+
+    // Pool must be untouched.
+    let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
+    assert_eq!(remaining, pool_size);
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
