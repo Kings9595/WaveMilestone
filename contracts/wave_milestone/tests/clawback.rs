@@ -84,3 +84,20 @@ fn test_clawback_pool_not_found() {
 
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
+
+#[test]
+fn test_clawback_registered_but_non_creator_maintainer_rejected() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    // Register a second maintainer in WaveGuard — they are authorized for
+    // bounty releases but NOT the original pool creator, so clawback must
+    // still reject them via the direct pool.maintainer equality check.
+    let second_maintainer = soroban_sdk::Address::generate(&ctx.env);
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&second_maintainer);
+
+    ctx.advance_to_expiry();
+    let result = ctx.client().try_clawback_expired_funds(&second_maintainer);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+}
