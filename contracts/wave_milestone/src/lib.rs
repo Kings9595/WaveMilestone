@@ -197,6 +197,11 @@ impl WaveMilestoneContract {
             return Err(Error::UnauthorizedMaintainer);
         }
 
+        // ── Developer address validation ──
+        if developer == env.current_contract_address() {
+            return Err(Error::InvalidDeveloper);
+        }
+
         // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
         // SECURITY: Must use Persistent storage here. Temporary storage entries
         // expire after their TTL; a lapsed entry returns None, bypassing this

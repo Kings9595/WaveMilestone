@@ -56,6 +56,22 @@ fn test_release_bounty_non_maintainer_rejected() {
 }
 
 #[test]
+fn test_release_bounty_contract_address_as_developer_rejected() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    let result = ctx.client().try_release_issue_bounty(
+        &ctx.maintainer,
+        &ctx.repo_hash,
+        &1u32,
+        &ctx.contract_id, // contract's own address — tokens would be locked
+        &DEFAULT_BOUNTY,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidDeveloper));
+}
+
+#[test]
 fn test_consecutive_bounties_different_issues() {
     let ctx = TestContext::new();
     let pool_size = DEFAULT_POOL_FUNDS;

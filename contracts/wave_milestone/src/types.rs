@@ -103,6 +103,7 @@ pub enum Error {
     TransferFailed = 8,
     InvalidAmount = 9,
     ExpiryInPast = 10,
+    InvalidDeveloper = 11,
 }
 
 // ─────────────────────────────────────────────────────────────
