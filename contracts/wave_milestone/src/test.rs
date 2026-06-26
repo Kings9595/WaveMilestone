@@ -58,22 +58,22 @@ impl MockToken {
         env.storage().instance().set(&MockTokenKey::Admin, &admin);
     }
 
-    pub fn mint(env: Env, to: Address, amount: u128) {
-        let bal = env.storage().instance().get::<_, u128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
+    pub fn mint(env: Env, to: Address, amount: i128) {
+        let bal = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
         env.storage().instance().set(&MockTokenKey::Balance(to), &(bal + amount));
     }
 
-    pub fn transfer(env: Env, from: Address, to: Address, amount: u128) {
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
-        let from_bal = env.storage().instance().get::<_, u128>(&MockTokenKey::Balance(from.clone())).unwrap_or(0);
+        let from_bal = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(from.clone())).unwrap_or(0);
         assert!(from_bal >= amount, "insufficient balance");
-        let to_bal = env.storage().instance().get::<_, u128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
+        let to_bal = env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(to.clone())).unwrap_or(0);
         env.storage().instance().set(&MockTokenKey::Balance(from), &(from_bal - amount));
         env.storage().instance().set(&MockTokenKey::Balance(to), &(to_bal + amount));
     }
 
-    pub fn balance(env: Env, id: Address) -> u128 {
-        env.storage().instance().get::<_, u128>(&MockTokenKey::Balance(id)).unwrap_or(0)
+    pub fn balance(env: Env, id: Address) -> i128 {
+        env.storage().instance().get::<_, i128>(&MockTokenKey::Balance(id)).unwrap_or(0)
     }
 }
 
@@ -116,7 +116,7 @@ fn setup() -> TestEnv {
 }
 
 fn fund_pool(t: &TestEnv, amount: u128) {
-    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &amount);
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &(amount as i128));
     WaveMilestoneContractClient::new(&t.env, &t.contract_id).create_milestone_pool(
         &t.maintainer,
         &t.guard_id,
@@ -135,7 +135,7 @@ fn test_create_milestone_pool_success() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
 
-    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &pool_size);
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &(pool_size as i128));
     WaveMilestoneContractClient::new(&t.env, &t.contract_id).create_milestone_pool(
         &t.maintainer,
         &t.guard_id,
@@ -207,7 +207,7 @@ fn test_release_bounty_success() {
     );
 
     let developer_balance_after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.developer);
-    assert_eq!(developer_balance_after - developer_balance_before, bounty);
+    assert_eq!(developer_balance_after - developer_balance_before, bounty as i128);
 
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
     assert_eq!(remaining, pool_size - bounty);
@@ -321,7 +321,7 @@ fn test_clawback_expired_funds() {
 
     let maintainer_balance_after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
     let expected_clawback = pool_size - bounty;
-    assert_eq!(maintainer_balance_after - maintainer_balance_before, expected_clawback);
+    assert_eq!(maintainer_balance_after - maintainer_balance_before, expected_clawback as i128);
 
     // Pool should show no remaining spendable balance
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
@@ -357,7 +357,7 @@ fn test_non_maintainer_cannot_create_pool() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
 
-    MockTokenClient::new(&t.env, &t.token_id).mint(&t.stranger, &pool_size);
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.stranger, &(pool_size as i128));
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_create_milestone_pool(
         &t.stranger,
@@ -427,6 +427,23 @@ fn test_release_issue_bounty_pool_not_found() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
+#[test]
+fn test_wrong_maintainer_cannot_release_bounty() {
+    let t = setup();
+    fund_pool(&t, 10_000_000_000);
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.stranger,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(), 10_000_000_000);
+}
+
 // ─────────────────────────────────────────────────────────────
 // Malicious / Rogue Maintainer Scenarios (Issue #110)
 // ─────────────────────────────────────────────────────────────
@@ -480,7 +497,7 @@ fn test_revoked_maintainer_can_still_clawback_own_funds() {
     WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
     let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
 
-    assert_eq!(after - before, pool_size);
+    assert_eq!(after - before, pool_size as i128);
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
@@ -556,7 +573,7 @@ fn test_maintainer_self_payout_is_not_blocked() {
     );
 
     let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
-    assert_eq!(after - before, bounty);
+    assert_eq!(after - before, bounty as i128);
 }
 
 /// A maintainer cannot drain more than they deposited by calling clawback
