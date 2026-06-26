@@ -258,20 +258,43 @@ fn clawback_expired_funds(e: Env) -> Result<(), Error>;
 
 ## Integration with WaveGuard
 
-WaveMilestone depends on [WaveGuard](https://github.com/anomalyco/waveguard) as its identity and access registry. During `create_milestone_pool` and `release_issue_bounty`, the contract calls into the WaveGuard instance to verify that the caller is an authorized maintainer.
+WaveMilestone depends on [WaveGuard](https://github.com/anomalyco/waveguard) as its identity and access registry. It is used as the source of truth for who is an authorized maintainer.
 
-The expected WaveGuard interface:
+### Required WaveGuard Interface
+
+WaveMilestone makes a single cross-contract call:
 
 ```rust
-/// Returns true if `address` is an authorized maintainer.
-fn is_maintainer(e: Env, address: Address) -> bool;
+/// Returns true if `address` is a registered, authorized maintainer.
+fn is_maintainer(env: Env, address: Address) -> bool;
 ```
 
-To integrate:
+### Where WaveGuard Is (and Is Not) Used
 
-1. Deploy WaveGuard and register maintainer identities.
-2. Pass the WaveGuard contract address as `guard_contract` when creating a milestone pool.
-3. WaveMilestone handles the cross-contract calls internally.
+| Operation | Stellar `require_auth` | WaveGuard `is_maintainer` |
+|-----------|------------------------|--------------------------|
+| `create_milestone_pool` | ✅ | ✅ |
+| `release_issue_bounty` | ✅ | ✅ |
+| `clawback_expired_funds` | ✅ | ❌ (direct `pool.maintainer` address check) |
+
+`clawback_expired_funds` uses a direct address equality check against the original `pool.maintainer` (set at pool creation) rather than re-consulting WaveGuard. This design decision isolates the clawback path from a potential WaveGuard compromise — a rogue WaveGuard upgrade cannot reroute unclaimed funds.
+
+### Error Codes
+
+If the WaveGuard check fails, the call reverts immediately with:
+
+| Situation | Error Code |
+|-----------|-----------|
+| Caller not registered in WaveGuard | `UnauthorizedMaintainer` (5) |
+| Clawback caller ≠ original pool maintainer | `UnauthorizedCaller` (6) |
+| `guard_contract` address is zero/missing | `MissingGuardContract` (11) |
+
+### Setup Steps
+
+1. Deploy a WaveGuard instance and register maintainer addresses.
+2. Pass the WaveGuard contract address as `guard_contract` when calling `create_milestone_pool`.
+3. The `guard_contract` address is fixed at pool creation — it cannot be changed afterward. If the WaveGuard registry is ever compromised, a new pool must be created with a fresh guard address.
+4. WaveMilestone handles all cross-contract calls internally; the integration is transparent to contributors.
 
 ---
 
