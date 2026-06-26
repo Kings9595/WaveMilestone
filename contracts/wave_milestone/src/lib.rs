@@ -273,7 +273,7 @@ impl WaveMilestoneContract {
         }
 
         let now = env.ledger().timestamp();
-        if now < pool.expiry {
+        if now <= pool.expiry {
             return Err(Error::ClawbackTooEarly);
         }
 
