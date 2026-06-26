@@ -5,8 +5,9 @@ mod test;
 pub mod types;
 
 use events::{
-    BountyReleasedEvent, FundsClawedBackEvent, PoolCreatedEvent, TOPIC_BOUNTY_RELEASED,
-    TOPIC_FUNDS_CLAWED_BACK, TOPIC_POOL_CREATED,
+    BountyReleasedEvent, FundsClawedBackEvent, MaintainerAuthFailedEvent, PoolCreatedEvent,
+    TOPIC_BOUNTY_RELEASED, TOPIC_FUNDS_CLAWED_BACK, TOPIC_MAINTAINER_AUTH_FAILED,
+    TOPIC_POOL_CREATED,
 };
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
@@ -111,6 +112,14 @@ impl WaveMilestoneContract {
         // ── WaveGuard validation ──
         let guard = WaveGuardClient::new(&env, &guard_contract);
         if !guard.is_maintainer(&maintainer) {
+            env.events().publish(
+                (Symbol::new(&env, TOPIC_MAINTAINER_AUTH_FAILED),),
+                MaintainerAuthFailedEvent {
+                    maintainer: maintainer.clone(),
+                    reason: Symbol::new(&env, "not_registered"),
+                    guard_contract: guard_contract.clone(),
+                },
+            );
             return Err(Error::UnauthorizedMaintainer);
         }
 
@@ -191,6 +200,14 @@ impl WaveMilestoneContract {
         // ── WaveGuard validation ──
         let guard = WaveGuardClient::new(&env, &pool.guard_contract);
         if !guard.is_maintainer(&maintainer) {
+            env.events().publish(
+                (Symbol::new(&env, TOPIC_MAINTAINER_AUTH_FAILED),),
+                MaintainerAuthFailedEvent {
+                    maintainer: maintainer.clone(),
+                    reason: Symbol::new(&env, "not_registered"),
+                    guard_contract: pool.guard_contract.clone(),
+                },
+            );
             return Err(Error::UnauthorizedMaintainer);
         }
 
