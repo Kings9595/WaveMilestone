@@ -20,9 +20,9 @@ WaveMilestone is a Stellar Soroban smart contract that implements an automated m
 │  ┌──────────────────────────────────────────────────────┐│
 │  │              WaveMilestone Contract                   ││
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ ││
-│  │  │   Instance    │  │   Temporary  │  │   Events   │ ││
+│  │  │   Instance    │  │  Persistent  │  │   Events   │ ││
 │  │  │   Storage     │  │   Storage    │  │   Emitter  │ ││
-│  │  │  (Pool Meta)  │  │ (IssueClaim) │  │            │ ││
+│  │  │  (Pool Meta)  │  │(ClaimRecord) │  │            │ ││
 │  │  └──────────────┘  └──────────────┘  └────────────┘ ││
 │  └───────────────────────┬──────────────────────────────┘│
 │                          │                               │
@@ -65,46 +65,65 @@ The `WaveMilestoneContract` is a single Soroban contract with three public lifec
 
 ## Storage Architecture
 
-### Instance Storage (Persistent, Contract Lifetime)
+WaveMilestone uses two Soroban storage tiers. The choice of tier is a security-critical decision: authorization-state data must never be placed in Temporary storage because TTL expiry can reset it, invalidating duplicate-claim guards.
+
+### Storage Tiers
+
+| Tier | Key | Data | Lifetime |
+|------|-----|------|----------|
+| **Instance** | `DataKey::Pool` | `MilestonePool` (pool metadata) | Contract lifetime |
+| **Persistent** | `DataKey::IssueClaim(repo_hash, issue_id)` | `IssueClaim` (claim record) | Contract lifetime |
+
+### Instance Storage — `MilestonePool`
 
 ```rust
 DataKey::Pool -> MilestonePool {
-    guard_contract: Address,
-    asset: Address,
-    total_funds: u128,
-    allocated_funds: u128,
-    expiry: u64,
-    maintainer: Address,
+    guard_contract: Address,  // WaveGuard registry address
+    asset: Address,            // SAC token used for payouts
+    total_funds: u128,         // Total budget locked at creation
+    allocated_funds: u128,     // Running total of released bounties
+    expiry: u64,               // Ledger timestamp after which clawback is allowed
+    maintainer: Address,       // Pool creator; sole clawback authority
 }
 ```
 
-- **Bumped on every write** (create_pool, release_bounty, clawback).
-- Stores aggregate pool state; read-heavy access for view methods.
+- Stored as a **singleton** (`DataKey::Pool`) — one pool per deployed contract.
+- Bumped (TTL refreshed) on every write: `create_milestone_pool`, `release_issue_bounty`, `clawback_expired_funds`.
+- Read by every view method (`milestone_balance`, `milestone_info`).
 
-### Temporary Storage (Single-Use, Gas-Optimized)
+### Persistent Storage — `IssueClaim`
 
 ```rust
 DataKey::IssueClaim(BytesN<32>, u32) -> IssueClaim {
-    issue_id: u32,
-    developer: Address,
-    payment_amount: u128,
-    completed: bool,
+    issue_id: u32,          // GitHub issue number
+    developer: Address,     // Recipient address
+    payment_amount: u128,   // Amount released
+    completed: bool,        // True once bounty is paid — MUST stay true forever
 }
 ```
 
-- **TTL-based lifecycle**: entries live only as long as needed for replay protection.
-- **Gas savings**: temporary storage costs significantly less than instance storage for short-lived data.
-- Each `(repo_hash, issue_id)` pair is written exactly once (when claimed) and never updated.
+- Keyed by a **composite `(repo_hash, issue_id)`** to prevent cross-repository collisions.
+- Written exactly once per `(repo_hash, issue_id)` pair when `release_issue_bounty` succeeds.
+- The `completed` flag is the **duplicate-claim guard**: any subsequent call with the same key reverts with `BountyAlreadyClaimed` before any token transfer occurs.
 
-### Why This Split?
+#### Security: Why Persistent, not Temporary (CM-01)
 
-| Criteria | Instance | Temporary |
-|----------|----------|-----------|
-| Lifetime | Contract lifetime | ~1 month (claim window) |
-| Read frequency | High (view methods) | Low (only on claim) |
-| Update frequency | Medium (per claim) | Never (write-once) |
-| Cost | Higher per byte | Lower per byte |
-| Data criticality | Pool integrity | Replay protection |
+An earlier design used **Temporary** storage for `IssueClaim`. Temporary entries expire after a ledger TTL. Once pruned, a lookup returns `None`, causing the duplicate-claim guard to treat the issue as unclaimed — allowing the same `(repo_hash, issue_id)` to be re-claimed and draining the pool.
+
+Switching to **Persistent** storage ensures the `completed` flag survives for the contract's lifetime, making replay protection unconditional.
+
+> **Rule:** Any state that functions as an authorization gate — completed flags, nonces, session tokens — MUST use Instance or Persistent storage. Temporary storage MUST NOT be used for such data.
+
+### Storage Tier Comparison
+
+| Criteria | Instance | Persistent | Temporary |
+|----------|----------|------------|-----------|
+| Lifetime | Contract lifetime | Contract lifetime | ~1 ledger TTL (~1 month default) |
+| Read frequency | High (every view call) | Low (only on claim) | — |
+| Update frequency | Medium (per claim) | Never (write-once) | — |
+| Gas cost | Higher per byte | Medium per byte | Lowest per byte |
+| Safe for auth state? | ✅ Yes | ✅ Yes | ❌ No — expiry bypasses guards |
+| Used by WaveMilestone | Pool metadata | Issue claim records | Not used |
 
 ## Authentication & Authorization
 
@@ -138,7 +157,7 @@ Client TX ──► maintainer.require_auth() ──► WaveGuard.is_maintainer(
 ### Duplicate Claim Prevention
 
 - Storage key: `DataKey::IssueClaim(repo_hash, issue_id)` — composite of repo identity and issue number.
-- Once `completed == true`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
+- Once `completed == true` in the `ClaimRecord`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
 - This prevents drain attacks via replay of claim transactions.
 
 ### Balance Overflow Protection
