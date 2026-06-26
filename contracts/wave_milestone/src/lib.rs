@@ -248,19 +248,14 @@ impl WaveMilestoneContract {
             return Err(Error::InvalidDeveloper);
         }
 
-        // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
-        // SECURITY: Must use Persistent storage here. Temporary storage entries
-        // expire after their TTL; a lapsed entry returns None, bypassing this
-        // guard and allowing a maintainer to re-claim the same issue bounty.
-        let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
-        if env
-            .storage()
-            .persistent()
-            .get::<_, ClaimRecord>(&claim_key)
-            .is_some_and(|c| c.completed)
-        {
+        // ── Issue claim status validation (CM-01) ──
+        // Delegates to the canonical is_claimed view so claim-status logic
+        // is defined in one place.  See is_claimed for the Persistent-storage
+        // and TTL-durability notes (CM-01 / TMP-02).
+        if Self::is_claimed(env.clone(), repo_hash.clone(), issue_id) {
             return Err(Error::BountyAlreadyClaimed);
         }
+        let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
 
         // ── Balance check ──
         let remaining = pool.remaining_balance();
