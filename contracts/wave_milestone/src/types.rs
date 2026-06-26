@@ -94,7 +94,7 @@ pub enum DataKey {
 #[repr(u32)]
 pub enum Error {
     PoolNotFound = 1,
-    PoolNotExpired = 2,
+    ClawbackTooEarly = 2,
     BountyAlreadyClaimed = 3,
     InsufficientPoolBalance = 4,
     UnauthorizedMaintainer = 5,
