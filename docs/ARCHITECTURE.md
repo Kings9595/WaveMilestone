@@ -22,7 +22,7 @@ WaveMilestone is a Stellar Soroban smart contract that implements an automated m
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ ││
 │  │  │   Instance    │  │  Persistent  │  │   Events   │ ││
 │  │  │   Storage     │  │   Storage    │  │   Emitter  │ ││
-│  │  │  (Pool Meta)  │  │ (IssueClaim) │  │            │ ││
+│  │  │  (Pool Meta)  │  │(ClaimRecord) │  │            │ ││
 │  │  └──────────────┘  └──────────────┘  └────────────┘ ││
 │  └───────────────────────┬──────────────────────────────┘│
 │                          │                               │
@@ -157,7 +157,7 @@ Client TX ──► maintainer.require_auth() ──► WaveGuard.is_maintainer(
 ### Duplicate Claim Prevention
 
 - Storage key: `DataKey::IssueClaim(repo_hash, issue_id)` — composite of repo identity and issue number.
-- Once `completed == true`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
+- Once `completed == true` in the `ClaimRecord`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
 - This prevents drain attacks via replay of claim transactions.
 
 ### Balance Overflow Protection

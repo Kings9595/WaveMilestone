@@ -42,27 +42,27 @@ impl MilestonePool {
     }
 }
 
-/// Individual issue bounty claim record.
+/// Record of a completed issue bounty claim.
+///
+/// Stored under `DataKey::IssueClaim(repo_hash, issue_id)` in **Persistent**
+/// storage.  The `repo_hash` and `issue_id` are already encoded in the key, and
+/// the `developer` is available from the call context, so only the payout
+/// amount and completion flag are stored here.
 ///
 /// # Storage Note (Security — CM-01)
-/// Stored in **Persistent** storage.  A previous version used Temporary
-/// storage, whose entries expire after a ledger TTL.  Once a Temporary entry
-/// is pruned, the duplicate-claim guard returns `None` for that key, allowing
-/// the same `(repo_hash, issue_id)` pair to be re-claimed.  Persistent storage
-/// ensures the completed flag survives for the contract's lifetime, making the
-/// duplicate-claim guard durable.
+/// Persistent storage is required.  A previous version used Temporary storage,
+/// whose entries expire after a ledger TTL.  Once pruned, the duplicate-claim
+/// guard would return `None`, allowing the same `(repo_hash, issue_id)` to be
+/// re-claimed.  Persistent storage ensures the guard is durable for the
+/// contract's lifetime.
 ///
 /// ## Temporary Storage Leakage Risk (TMP-01)
-/// Any future use of Temporary storage for authorization state — such as
-/// one-time nonces, session tokens, or flags — is subject to the same
-/// expiry-based re-use attack unless the TTL is explicitly managed and
-/// checked.  Authorization-critical state MUST use Instance or Persistent
-/// storage.
+/// Any future authorization state in Temporary storage (nonces, session flags)
+/// is subject to the same expiry-based re-use risk unless TTLs are explicitly
+/// managed.  Authorization-critical state MUST use Instance or Persistent storage.
 #[contracttype]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IssueClaim {
-    pub issue_id: u32,
-    pub developer: Address,
+pub struct ClaimRecord {
     pub payment_amount: u128,
     pub completed: bool,
 }
@@ -77,7 +77,28 @@ pub enum DataKey {
     Pool,
     /// Per-issue claim under a specific repository (Persistent storage)
     ///
-    /// Key: (repo_hash: BytesN<32>, issue_id: u32)
+    /// ## `repo_hash` — purpose and usage
+    ///
+    /// `repo_hash` is the **SHA-256 hash of the fully-qualified GitHub
+    /// repository name** (e.g. `sha256(b"owner/my-repo")`), encoded as a
+    /// 32-byte big-endian digest.  Its role is to namespace issue IDs so that
+    /// the same issue number in two different repositories maps to two distinct
+    /// storage keys and can never collide inside the same milestone pool.
+    ///
+    /// **Why a hash instead of the raw name?**
+    /// - Soroban storage keys must be of a fixed, WASM-friendly type.
+    ///   `BytesN<32>` is compact, constant-size, and cheap to compare.
+    /// - Hashing the name keeps keys uniform regardless of repository name
+    ///   length, avoiding variable-length key overhead.
+    ///
+    /// **How to produce `repo_hash` off-chain:**
+    /// ```text
+    /// repo_hash = sha256("owner/my-repo")  // raw UTF-8 bytes, no trailing newline
+    /// ```
+    /// In JavaScript: `crypto.subtle.digest("SHA-256", new TextEncoder().encode("owner/my-repo"))`
+    /// In Rust:       `sha2::Sha256::digest(b"owner/my-repo")`
+    ///
+    /// Key: `(repo_hash: BytesN<32>, issue_id: u32)`
     ///
     /// SECURITY: This key MUST be read/written via `persistent()` storage.
     /// Using `temporary()` for this key bypasses the duplicate-claim guard
@@ -103,6 +124,7 @@ pub enum Error {
     TransferFailed = 8,
     InvalidAmount = 9,
     ExpiryInPast = 10,
+    InvalidRepoHash = 11,
 }
 
 // ─────────────────────────────────────────────────────────────
