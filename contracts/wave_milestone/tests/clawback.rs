@@ -1,6 +1,8 @@
 mod common;
 
 use common::*;
+use soroban_sdk::{testutils::Events, TryFromVal};
+use wave_milestone::events::FundsClawedBackEvent;
 use wave_milestone::types::Error;
 
 #[test]
