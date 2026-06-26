@@ -44,12 +44,16 @@ impl MilestonePool {
 
 /// Individual issue bounty claim record.
 ///
+/// Uniqueness is enforced by the storage key `(repo_hash, issue_id)` — the
+/// `DataKey::IssueClaim` variant.  The mere presence of a record under that
+/// key means the claim has been paid; no separate `completed` flag is needed.
+///
 /// # Storage Note (Security — CM-01)
 /// Stored in **Persistent** storage.  A previous version used Temporary
 /// storage, whose entries expire after a ledger TTL.  Once a Temporary entry
 /// is pruned, the duplicate-claim guard returns `None` for that key, allowing
 /// the same `(repo_hash, issue_id)` pair to be re-claimed.  Persistent storage
-/// ensures the completed flag survives for the contract's lifetime, making the
+/// ensures the claim record survives for the contract's lifetime, making the
 /// duplicate-claim guard durable.
 ///
 /// ## Temporary Storage Leakage Risk (TMP-01)
@@ -61,10 +65,8 @@ impl MilestonePool {
 #[contracttype]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueClaim {
-    pub issue_id: u32,
     pub developer: Address,
     pub payment_amount: u128,
-    pub completed: bool,
 }
 
 // ─────────────────────────────────────────────────────────────

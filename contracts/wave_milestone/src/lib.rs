@@ -198,13 +198,9 @@ impl WaveMilestoneContract {
         // SECURITY: Must use Persistent storage here. Temporary storage entries
         // expire after their TTL; a lapsed entry returns None, bypassing this
         // guard and allowing a maintainer to re-claim the same issue bounty.
+        // Uniqueness is enforced by key existence alone — the key IS the claim.
         let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
-        if env
-            .storage()
-            .persistent()
-            .get::<_, IssueClaim>(&claim_key)
-            .is_some_and(|c| c.completed)
-        {
+        if env.storage().persistent().has(&claim_key) {
             return Err(Error::BountyAlreadyClaimed);
         }
 
@@ -226,8 +222,7 @@ impl WaveMilestoneContract {
         env.storage().instance().set(&DataKey::Pool, &pool);
 
         // ── Record claim in Persistent storage (CM-01 fix) ──
-        let claim =
-            IssueClaim { issue_id, developer: developer.clone(), payment_amount: amount, completed: true };
+        let claim = IssueClaim { developer: developer.clone(), payment_amount: amount };
         env.storage().persistent().set(&claim_key, &claim);
 
         // ── Emit event ──
@@ -310,7 +305,7 @@ impl WaveMilestoneContract {
     /// the fix (Temporary storage) will not be visible here on live networks.
     pub fn is_claimed(env: Env, repo_hash: BytesN<32>, issue_id: u32) -> bool {
         let claim_key = DataKey::IssueClaim(repo_hash, issue_id);
-        env.storage().persistent().get::<_, IssueClaim>(&claim_key).is_some_and(|c| c.completed)
+        env.storage().persistent().has(&claim_key)
     }
 
     /// Returns the full milestone metadata, or `None` if uninitialized.
