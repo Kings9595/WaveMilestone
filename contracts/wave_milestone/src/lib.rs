@@ -105,10 +105,10 @@ impl WaveMilestoneContract {
         total_funds: u128,
         expiry: u64,
     ) -> Result<(), Error> {
-        // ── Authentication ──
+        // ── AUTH GATE 1/2: Stellar signature check ──
         maintainer.require_auth();
 
-        // ── WaveGuard validation ──
+        // ── AUTH GATE 2/2: WaveGuard registry check ──
         let guard = WaveGuardClient::new(&env, &guard_contract);
         if !guard.is_maintainer(&maintainer) {
             return Err(Error::UnauthorizedMaintainer);
@@ -178,7 +178,7 @@ impl WaveMilestoneContract {
         developer: Address,
         amount: u128,
     ) -> Result<(), Error> {
-        // ── Authentication ──
+        // ── AUTH GATE 1/2: Stellar signature check ──
         maintainer.require_auth();
 
         // ── Load pool ──
@@ -188,7 +188,7 @@ impl WaveMilestoneContract {
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
 
-        // ── WaveGuard validation ──
+        // ── AUTH GATE 2/2: WaveGuard registry check ──
         let guard = WaveGuardClient::new(&env, &pool.guard_contract);
         if !guard.is_maintainer(&maintainer) {
             return Err(Error::UnauthorizedMaintainer);
@@ -257,6 +257,10 @@ impl WaveMilestoneContract {
     ///   a direct address comparison so that a WaveGuard compromise cannot
     ///   reroute funds via this path.
     pub fn clawback_expired_funds(env: Env, maintainer: Address) -> Result<(), Error> {
+        // ── AUTH GATE 1/1: Stellar signature check ──
+        // NOTE: WaveGuard is intentionally NOT re-checked here. Clawback uses
+        // direct address equality (pool.maintainer) so a WaveGuard compromise
+        // cannot redirect funds via this path. See trust assumptions in docstring.
         maintainer.require_auth();
 
         let mut pool = env
