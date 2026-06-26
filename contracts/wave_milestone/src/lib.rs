@@ -10,7 +10,7 @@ use events::{
 };
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
-use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardClient};
+use types::{ClaimRecord, DataKey, Error, MilestonePool, TokenClient, WaveGuardClient};
 
 // ─────────────────────────────────────────────────────────────
 // Contract Entry Point
@@ -43,11 +43,11 @@ use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardCli
 /// ## Unauthorized Claim Manipulation — Audit Findings
 ///
 /// ### FINDING CM-01 (CRITICAL — Fixed): Temporary-storage expiry re-claim
-/// Original code stored `IssueClaim` in **Temporary** storage.  Stellar's
+/// Original code stored `ClaimRecord` in **Temporary** storage.  Stellar's
 /// Temporary storage entries are pruned after their TTL expires.  Once pruned,
 /// `env.storage().temporary().get(...)` returns `None`, the duplicate-claim
 /// guard treats the issue as unclaimed, and a maintainer can re-release the
-/// same bounty.  This has been **fixed** by migrating `IssueClaim` records to
+/// same bounty.  This has been **fixed** by migrating `ClaimRecord` records to
 /// **Persistent** storage so they survive for the ledger lifetime of the
 /// contract.  See `release_issue_bounty` and `is_claimed` below.
 ///
@@ -62,7 +62,7 @@ use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardCli
 /// ## Temporary Storage Leakage
 ///
 /// ### NOTE TMP-01: Temporary storage is not used for claim records (post-fix)
-/// After CM-01's fix, `IssueClaim` entries now live in Persistent storage.
+/// After CM-01's fix, `ClaimRecord` entries now live in Persistent storage.
 /// No sensitive claim state is held in Temporary storage.  Callers should be
 /// aware that any future use of Temporary storage for authorization state
 /// (e.g., nonces, session flags) would be subject to the same expiry-based
@@ -248,7 +248,7 @@ impl WaveMilestoneContract {
         if env
             .storage()
             .persistent()
-            .get::<_, IssueClaim>(&claim_key)
+            .get::<_, ClaimRecord>(&claim_key)
             .is_some_and(|c| c.completed)
         {
             return Err(Error::BountyAlreadyClaimed);
@@ -275,8 +275,7 @@ impl WaveMilestoneContract {
         env.storage().instance().set(&DataKey::Pool, &pool);
 
         // ── Record claim in Persistent storage (CM-01 fix) ──
-        let claim =
-            IssueClaim { issue_id, developer: developer.clone(), payment_amount: amount, completed: true };
+        let claim = ClaimRecord { payment_amount: amount, completed: true };
         env.storage().persistent().set(&claim_key, &claim);
 
         // ── Emit event ──
@@ -376,7 +375,7 @@ impl WaveMilestoneContract {
     /// the fix (Temporary storage) will not be visible here on live networks.
     pub fn is_claimed(env: Env, repo_hash: BytesN<32>, issue_id: u32) -> bool {
         let claim_key = DataKey::IssueClaim(repo_hash, issue_id);
-        env.storage().persistent().get::<_, IssueClaim>(&claim_key).is_some_and(|c| c.completed)
+        env.storage().persistent().get::<_, ClaimRecord>(&claim_key).is_some_and(|c| c.completed)
     }
 
     /// Returns the full milestone metadata, or `None` if uninitialized.

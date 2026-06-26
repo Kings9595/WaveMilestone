@@ -593,6 +593,60 @@ fn test_double_clawback_rejected() {
     assert_eq!(result.err().unwrap(), Ok(Error::NoFundsToClawback));
 }
 
+// ─────────────────────────────────────────────────────────────
+// Issue #61 — completed flag is set only on successful release
+// ─────────────────────────────────────────────────────────────
+
+/// `is_claimed` must return `true` after a successful bounty release.
+#[test]
+fn test_completed_flag_set_after_successful_release() {
+    let t = setup();
+    fund_pool(&t, 10_000_000_000);
+
+    assert!(!WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+}
+
+/// A failed release attempt (amount exceeds pool) must NOT set the claim —
+/// `is_claimed` must still return `false` so the issue can be retried.
+#[test]
+fn test_completed_flag_not_set_on_failed_release() {
+    let t = setup();
+    fund_pool(&t, 1_000_000_000);
+
+    // Attempt to release more than the pool holds — this must fail.
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &5_000_000_000,
+    );
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+
+    // Claim must be absent — the issue should still be releasable.
+    assert!(!WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+
+    // Confirm a correct-sized release now succeeds.
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &500_000_000,
+    );
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+}
+
 /// After reclaiming the escrow via clawback, a maintainer must not be able to
 /// keep paying out bounties — the spendable balance is gone.
 #[test]

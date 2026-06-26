@@ -20,9 +20,9 @@ WaveMilestone is a Stellar Soroban smart contract that implements an automated m
 │  ┌──────────────────────────────────────────────────────┐│
 │  │              WaveMilestone Contract                   ││
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ ││
-│  │  │   Instance    │  │   Temporary  │  │   Events   │ ││
+│  │  │   Instance    │  │  Persistent  │  │   Events   │ ││
 │  │  │   Storage     │  │   Storage    │  │   Emitter  │ ││
-│  │  │  (Pool Meta)  │  │ (IssueClaim) │  │            │ ││
+│  │  │  (Pool Meta)  │  │(ClaimRecord) │  │            │ ││
 │  │  └──────────────┘  └──────────────┘  └────────────┘ ││
 │  └───────────────────────┬──────────────────────────────┘│
 │                          │                               │
@@ -81,30 +81,67 @@ DataKey::Pool -> MilestonePool {
 - **Bumped on every write** (create_pool, release_bounty, clawback).
 - Stores aggregate pool state; read-heavy access for view methods.
 
-### Temporary Storage (Single-Use, Gas-Optimized)
+### Persistent Storage — Claim Records
 
 ```rust
-DataKey::IssueClaim(BytesN<32>, u32) -> IssueClaim {
-    issue_id: u32,
-    developer: Address,
+DataKey::IssueClaim(BytesN<32>, u32) -> ClaimRecord {
     payment_amount: u128,
     completed: bool,
 }
 ```
 
-- **TTL-based lifecycle**: entries live only as long as needed for replay protection.
-- **Gas savings**: temporary storage costs significantly less than instance storage for short-lived data.
-- Each `(repo_hash, issue_id)` pair is written exactly once (when claimed) and never updated.
+Claim records are stored in **Persistent** storage (not Temporary).  A prior
+design used Temporary storage, but entries there are pruned after their TTL
+(~1 month on Mainnet).  Once pruned, the duplicate-claim guard would see `None`
+and allow the same `(repo_hash, issue_id)` pair to be re-released — a critical
+drain vulnerability (see security finding CM-01).  Persistent storage makes the
+guard durable for the contract's lifetime.
+
+The key encodes both `repo_hash` and `issue_id`, so only `payment_amount` and
+`completed` need to be stored in the record itself — `issue_id` and `developer`
+are available from the call context and the storage key respectively.
 
 ### Why This Split?
 
-| Criteria | Instance | Temporary |
-|----------|----------|-----------|
-| Lifetime | Contract lifetime | ~1 month (claim window) |
-| Read frequency | High (view methods) | Low (only on claim) |
+| Criteria | Instance (`Pool`) | Persistent (`ClaimRecord`) |
+|----------|-------------------|-----------------------------|
+| Lifetime | Contract lifetime | Contract lifetime |
+| Read frequency | High (view methods) | Low (only on release/query) |
 | Update frequency | Medium (per claim) | Never (write-once) |
-| Cost | Higher per byte | Lower per byte |
-| Data criticality | Pool integrity | Replay protection |
+| Data criticality | Pool integrity | Duplicate-claim prevention |
+
+### Claim Record Cleanup
+
+`ClaimRecord` entries in Persistent storage accumulate over the contract's
+lifetime — one entry per successfully released issue.  Unlike Temporary
+storage, Persistent entries are not automatically pruned.
+
+**Guidelines for operators:**
+
+1. **Ledger TTL rent**: Persistent entries require periodic ledger-fee bumps to
+   stay active.  The contract bumps the Instance storage entry on every write,
+   but individual `ClaimRecord` keys under `DataKey::IssueClaim` are **not**
+   automatically extended by contract logic.  On Mainnet, entries whose rent
+   is not extended will eventually be archived (moved to the historical
+   ledger), which has the same effect as deletion and would re-open the
+   duplicate-claim guard for that key.
+
+   **Mitigation**: Either (a) issue periodic `extend_ttl` calls on all
+   `ClaimRecord` keys via an off-chain maintenance script, or (b) accept that
+   the practical claim window matches the TTL and document this as an
+   operational constraint.  The current implementation relies on (b); issue
+   bounty windows are typically shorter than the Persistent entry TTL.
+
+2. **No manual deletion path**: There is no contract method to delete a
+   `ClaimRecord`.  This is intentional — deletion would reopen replay
+   protection for that key.  If a record must be invalidated for operational
+   reasons (e.g. incorrectly issued claim), a contract upgrade is required.
+
+3. **Off-chain indexing**: To enumerate all claim records, subscribe to
+   `BountyReleased` events from the contract's event stream.  On-chain
+   iteration over storage keys is not supported in Soroban; the event log is
+   the canonical index of all claims.
+
 
 ## Authentication & Authorization
 
@@ -138,7 +175,7 @@ Client TX ──► maintainer.require_auth() ──► WaveGuard.is_maintainer(
 ### Duplicate Claim Prevention
 
 - Storage key: `DataKey::IssueClaim(repo_hash, issue_id)` — composite of repo identity and issue number.
-- Once `completed == true`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
+- Once `completed == true` in the `ClaimRecord`, all subsequent `release_issue_bounty` calls with the same key revert with `BountyAlreadyClaimed`.
 - This prevents drain attacks via replay of claim transactions.
 
 ### Balance Overflow Protection
