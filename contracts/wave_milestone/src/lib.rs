@@ -266,7 +266,7 @@ impl WaveMilestoneContract {
             .ok_or(Error::PoolNotFound)?;
 
         if maintainer != pool.maintainer {
-            return Err(Error::UnauthorizedCaller);
+            return Err(Error::NotPoolMaintainer);
         }
 
         let now = env.ledger().timestamp();

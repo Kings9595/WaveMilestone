@@ -89,19 +89,33 @@ pub enum DataKey {
 // Error Enum
 // ─────────────────────────────────────────────────────────────
 
+/// Contract-level error codes.
+///
+/// Each variant maps to a unique `u32` discriminant returned to the caller
+/// when the corresponding operation cannot be completed.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    /// No milestone pool has been created yet.
     PoolNotFound = 1,
+    /// The pool has not yet reached its expiry timestamp.
     PoolNotExpired = 2,
+    /// The `(repo_hash, issue_id)` pair has already been paid out.
     BountyAlreadyClaimed = 3,
+    /// The pool's remaining balance is less than the requested bounty amount.
     InsufficientPoolBalance = 4,
+    /// The caller is not recognised as a maintainer by the WaveGuard registry.
     UnauthorizedMaintainer = 5,
-    UnauthorizedCaller = 6,
+    /// The caller does not match `pool.maintainer` (clawback requires pool ownership).
+    NotPoolMaintainer = 6,
+    /// The pool has no unclaimed funds left to claw back.
     NoFundsToClawback = 7,
+    /// The underlying token transfer call failed.
     TransferFailed = 8,
+    /// The provided amount is zero (not allowed).
     InvalidAmount = 9,
+    /// The provided expiry timestamp is in the past.
     ExpiryInPast = 10,
 }
 
