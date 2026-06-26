@@ -226,8 +226,14 @@ impl WaveMilestoneContract {
         env.storage().instance().set(&DataKey::Pool, &pool);
 
         // ── Record claim in Persistent storage (CM-01 fix) ──
-        let claim =
-            IssueClaim { issue_id, developer: developer.clone(), payment_amount: amount, completed: true };
+        let claim = IssueClaim {
+            issue_id,
+            developer: developer.clone(),
+            payment_amount: amount,
+            completed: true,
+            maintainer: maintainer.clone(),
+            claimed_at: env.ledger().timestamp(),
+        };
         env.storage().persistent().set(&claim_key, &claim);
 
         // ── Emit event ──

@@ -58,6 +58,11 @@ impl MilestonePool {
 /// expiry-based re-use attack unless the TTL is explicitly managed and
 /// checked.  Authorization-critical state MUST use Instance or Persistent
 /// storage.
+///
+/// ## Audit Metadata
+/// The `maintainer` and `claimed_at` fields provide an on-chain audit trail.
+/// `maintainer` records which authorized address released the bounty, and
+/// `claimed_at` records the ledger timestamp of the claim.
 #[contracttype]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueClaim {
@@ -65,6 +70,8 @@ pub struct IssueClaim {
     pub developer: Address,
     pub payment_amount: u128,
     pub completed: bool,
+    pub maintainer: Address,
+    pub claimed_at: u64,
 }
 
 // ─────────────────────────────────────────────────────────────
