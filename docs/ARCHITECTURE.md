@@ -65,83 +65,65 @@ The `WaveMilestoneContract` is a single Soroban contract with three public lifec
 
 ## Storage Architecture
 
-### Instance Storage (Persistent, Contract Lifetime)
+WaveMilestone uses two Soroban storage tiers. The choice of tier is a security-critical decision: authorization-state data must never be placed in Temporary storage because TTL expiry can reset it, invalidating duplicate-claim guards.
+
+### Storage Tiers
+
+| Tier | Key | Data | Lifetime |
+|------|-----|------|----------|
+| **Instance** | `DataKey::Pool` | `MilestonePool` (pool metadata) | Contract lifetime |
+| **Persistent** | `DataKey::IssueClaim(repo_hash, issue_id)` | `IssueClaim` (claim record) | Contract lifetime |
+
+### Instance Storage — `MilestonePool`
 
 ```rust
 DataKey::Pool -> MilestonePool {
-    guard_contract: Address,
-    asset: Address,
-    total_funds: u128,
-    allocated_funds: u128,
-    expiry: u64,
-    maintainer: Address,
+    guard_contract: Address,  // WaveGuard registry address
+    asset: Address,            // SAC token used for payouts
+    total_funds: u128,         // Total budget locked at creation
+    allocated_funds: u128,     // Running total of released bounties
+    expiry: u64,               // Ledger timestamp after which clawback is allowed
+    maintainer: Address,       // Pool creator; sole clawback authority
 }
 ```
 
-- **Bumped on every write** (create_pool, release_bounty, clawback).
-- Stores aggregate pool state; read-heavy access for view methods.
+- Stored as a **singleton** (`DataKey::Pool`) — one pool per deployed contract.
+- Bumped (TTL refreshed) on every write: `create_milestone_pool`, `release_issue_bounty`, `clawback_expired_funds`.
+- Read by every view method (`milestone_balance`, `milestone_info`).
 
-### Persistent Storage — Claim Records
+### Persistent Storage — `IssueClaim`
 
 ```rust
-DataKey::IssueClaim(BytesN<32>, u32) -> ClaimRecord {
-    payment_amount: u128,
-    completed: bool,
+DataKey::IssueClaim(BytesN<32>, u32) -> IssueClaim {
+    issue_id: u32,          // GitHub issue number
+    developer: Address,     // Recipient address
+    payment_amount: u128,   // Amount released
+    completed: bool,        // True once bounty is paid — MUST stay true forever
 }
 ```
 
-Claim records are stored in **Persistent** storage (not Temporary).  A prior
-design used Temporary storage, but entries there are pruned after their TTL
-(~1 month on Mainnet).  Once pruned, the duplicate-claim guard would see `None`
-and allow the same `(repo_hash, issue_id)` pair to be re-released — a critical
-drain vulnerability (see security finding CM-01).  Persistent storage makes the
-guard durable for the contract's lifetime.
+- Keyed by a **composite `(repo_hash, issue_id)`** to prevent cross-repository collisions.
+- Written exactly once per `(repo_hash, issue_id)` pair when `release_issue_bounty` succeeds.
+- The `completed` flag is the **duplicate-claim guard**: any subsequent call with the same key reverts with `BountyAlreadyClaimed` before any token transfer occurs.
 
-The key encodes both `repo_hash` and `issue_id`, so only `payment_amount` and
-`completed` need to be stored in the record itself — `issue_id` and `developer`
-are available from the call context and the storage key respectively.
+#### Security: Why Persistent, not Temporary (CM-01)
 
-### Why This Split?
+An earlier design used **Temporary** storage for `IssueClaim`. Temporary entries expire after a ledger TTL. Once pruned, a lookup returns `None`, causing the duplicate-claim guard to treat the issue as unclaimed — allowing the same `(repo_hash, issue_id)` to be re-claimed and draining the pool.
 
-| Criteria | Instance (`Pool`) | Persistent (`ClaimRecord`) |
-|----------|-------------------|-----------------------------|
-| Lifetime | Contract lifetime | Contract lifetime |
-| Read frequency | High (view methods) | Low (only on release/query) |
-| Update frequency | Medium (per claim) | Never (write-once) |
-| Data criticality | Pool integrity | Duplicate-claim prevention |
+Switching to **Persistent** storage ensures the `completed` flag survives for the contract's lifetime, making replay protection unconditional.
 
-### Claim Record Cleanup
+> **Rule:** Any state that functions as an authorization gate — completed flags, nonces, session tokens — MUST use Instance or Persistent storage. Temporary storage MUST NOT be used for such data.
 
-`ClaimRecord` entries in Persistent storage accumulate over the contract's
-lifetime — one entry per successfully released issue.  Unlike Temporary
-storage, Persistent entries are not automatically pruned.
+### Storage Tier Comparison
 
-**Guidelines for operators:**
-
-1. **Ledger TTL rent**: Persistent entries require periodic ledger-fee bumps to
-   stay active.  The contract bumps the Instance storage entry on every write,
-   but individual `ClaimRecord` keys under `DataKey::IssueClaim` are **not**
-   automatically extended by contract logic.  On Mainnet, entries whose rent
-   is not extended will eventually be archived (moved to the historical
-   ledger), which has the same effect as deletion and would re-open the
-   duplicate-claim guard for that key.
-
-   **Mitigation**: Either (a) issue periodic `extend_ttl` calls on all
-   `ClaimRecord` keys via an off-chain maintenance script, or (b) accept that
-   the practical claim window matches the TTL and document this as an
-   operational constraint.  The current implementation relies on (b); issue
-   bounty windows are typically shorter than the Persistent entry TTL.
-
-2. **No manual deletion path**: There is no contract method to delete a
-   `ClaimRecord`.  This is intentional — deletion would reopen replay
-   protection for that key.  If a record must be invalidated for operational
-   reasons (e.g. incorrectly issued claim), a contract upgrade is required.
-
-3. **Off-chain indexing**: To enumerate all claim records, subscribe to
-   `BountyReleased` events from the contract's event stream.  On-chain
-   iteration over storage keys is not supported in Soroban; the event log is
-   the canonical index of all claims.
-
+| Criteria | Instance | Persistent | Temporary |
+|----------|----------|------------|-----------|
+| Lifetime | Contract lifetime | Contract lifetime | ~1 ledger TTL (~1 month default) |
+| Read frequency | High (every view call) | Low (only on claim) | — |
+| Update frequency | Medium (per claim) | Never (write-once) | — |
+| Gas cost | Higher per byte | Medium per byte | Lowest per byte |
+| Safe for auth state? | ✅ Yes | ✅ Yes | ❌ No — expiry bypasses guards |
+| Used by WaveMilestone | Pool metadata | Issue claim records | Not used |
 
 ## Authentication & Authorization
 
