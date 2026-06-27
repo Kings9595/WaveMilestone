@@ -96,8 +96,9 @@ fn test_removed_maintainer_can_still_clawback() {
     MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
     ctx.advance_to_expiry();
 
-    // Clawback should still succeed — address equality, not WaveGuard, guards this path.
-    ctx.client().clawback_expired_funds(&ctx.maintainer).unwrap();
+    // Clawback requires active WaveGuard membership — a removed maintainer is rejected.
+    let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 
-    assert_eq!(ctx.client().milestone_balance(), 0);
+    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
 }
