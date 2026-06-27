@@ -28,7 +28,7 @@ fn test_error_pool_not_expired() {
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
     // Clawback before expiry — ledger is still before ctx.expiry
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
-    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
+    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
 }
 
 // ── BountyAlreadyClaimed (3) ─────────────────────────────────

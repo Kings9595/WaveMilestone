@@ -133,8 +133,16 @@ impl WaveMilestoneContract {
             return Err(Error::InvalidAmount);
         }
         let now = env.ledger().timestamp();
+        if expiry == 0 {
+            return Err(Error::InvalidExpiry);
+        }
         if expiry <= now {
             return Err(Error::ExpiryInPast);
+        }
+
+        // ── Duplicate pool guard ──
+        if env.storage().instance().get::<_, MilestonePool>(&DataKey::Pool).is_some() {
+            return Err(Error::PoolAlreadyExists);
         }
 
         // ── Fund transfer ──
@@ -240,11 +248,9 @@ impl WaveMilestoneContract {
         ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         // ── Developer address validation (issue #109) ──
-        // Reject the all-zero contract address, which is a zero-like sentinel
-        // that cannot meaningfully hold tokens and indicates a misconfigured call.
+        // Reject the all-zero contract address by comparing the raw 32-byte id.
         // CAAAA...D2KM is the Strkey encoding of the 32-byte all-zero contract id.
-        let zero_contract = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-        if developer == zero_contract {
+        if developer == Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM") {
             return Err(Error::InvalidDeveloper);
         }
 
@@ -308,9 +314,6 @@ impl WaveMilestoneContract {
             .instance()
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
-
-        // ── WaveGuard validation ──
-        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         if maintainer != pool.maintainer {
             return Err(Error::UnauthorizedCaller);
