@@ -86,3 +86,36 @@ fn test_consecutive_bounties_different_issues() {
     let expected_remaining = pool_size - (bounty * 3);
     assert_eq!(ctx.client().milestone_balance(), expected_remaining);
 }
+
+/// Issue #20: release_issue_bounty must return InsufficientPoolBalance when
+/// the requested amount exceeds the remaining pool balance.
+#[test]
+fn test_release_bounty_exceeds_remaining_balance_rejected() {
+    let ctx = TestContext::new();
+    let pool_size = 1_000_000_000u128;
+    ctx.fund_pool(pool_size);
+
+    let result = ctx
+        .client()
+        .try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &(pool_size + 1));
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+    // Pool must be intact — no funds leaked.
+    assert_eq!(ctx.client().milestone_balance(), pool_size);
+}
+
+/// Issue #21: allocated_funds must increase by exactly the released amount
+/// after a successful bounty release.
+#[test]
+fn test_allocated_funds_updated_after_bounty_release() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+    let bounty = DEFAULT_BOUNTY;
+    ctx.fund_pool(pool_size);
+
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &bounty);
+
+    let pool = ctx.client().milestone_info().unwrap();
+    assert_eq!(pool.allocated_funds, bounty);
+    assert_eq!(pool.total_funds - pool.allocated_funds, pool_size - bounty);
+}

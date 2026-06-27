@@ -696,3 +696,46 @@ fn test_recreate_pool_overwrites_existing_accounting() {
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
     assert_eq!(remaining, second_size);
 }
+
+/// Issue #23: BountyReleasedEvent must be emitted on a successful bounty
+/// release with the correct repo_hash, issue_id, developer, and amount.
+#[test]
+fn test_bounty_released_event_emitted() {
+    use crate::events::BountyReleasedEvent;
+    use soroban_sdk::{IntoVal, Symbol};
+
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 2_500_000_000;
+    let issue_id: u32 = 42;
+
+    fund_pool(&t, pool_size);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &issue_id,
+        &t.developer,
+        &bounty,
+    );
+
+    let events = t.env.events().all();
+    // Two events: PoolCreatedEvent (from fund_pool) + BountyReleasedEvent.
+    assert_eq!(events.len(), 2);
+
+    let (contract, topics, data) = events.last().unwrap();
+    assert_eq!(contract, t.contract_id);
+
+    let expected_topic =
+        (Symbol::new(&t.env, crate::events::TOPIC_BOUNTY_RELEASED),).into_val(&t.env);
+    assert_eq!(topics, expected_topic);
+
+    let expected_data = BountyReleasedEvent {
+        repo_hash: t.repo_hash.clone(),
+        issue_id,
+        developer: t.developer.clone(),
+        amount: bounty,
+    }
+    .into_val(&t.env);
+    assert_eq!(data, expected_data);
+}
