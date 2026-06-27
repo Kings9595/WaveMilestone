@@ -125,6 +125,8 @@ pub enum Error {
     TransferFailed = 9,
     InvalidAmount = 10,
     ExpiryInPast = 11,
+    InvalidPoolCreationInput = 12,
+    InvalidDeveloper = 13,
 }
 
 // ─────────────────────────────────────────────────────────────
