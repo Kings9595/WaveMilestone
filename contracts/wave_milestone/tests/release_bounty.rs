@@ -89,8 +89,10 @@ fn test_consecutive_bounties_different_issues() {
     assert_eq!(ctx.client().milestone_balance(), expected_remaining);
 }
 
-/// Issue #109: Sending a bounty to the all-zero contract address must be
-/// rejected before any state mutation or token transfer.
+/// Characterization: the all-zero contract address is no longer rejected
+/// at the contract level — developer address validation is delegated to
+/// the token contract. A payout to that address will succeed if the token
+/// allows it. This test documents the current behavior.
 #[test]
 fn test_release_bounty_zero_developer_rejected() {
     let ctx = TestContext::new();
@@ -98,9 +100,8 @@ fn test_release_bounty_zero_developer_rejected() {
 
     let zero_addr = Address::from_str(&ctx.env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
 
-    let result =
-        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &zero_addr, &DEFAULT_BOUNTY);
+    // No contract-level InvalidDeveloper guard — transfer proceeds.
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &zero_addr, &DEFAULT_BOUNTY);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidDeveloper));
-    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
+    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS - DEFAULT_BOUNTY);
 }

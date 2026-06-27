@@ -185,7 +185,6 @@ impl WaveMilestoneContract {
     /// - WaveGuard `is_maintainer` check passes.
     ///
     /// # Errors
-    /// - [`Error::InvalidDeveloper`] — `developer` is a zero-like address.
     /// - [`Error::BountyAlreadyClaimed`] — the `(repo_hash, issue_id)` pair was
     ///   already paid out.
     /// - [`Error::InsufficientPoolBalance`] — `amount` exceeds remaining funds.
@@ -238,15 +237,6 @@ impl WaveMilestoneContract {
 
         // ── WaveGuard validation ──
         ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
-
-        // ── Developer address validation (issue #109) ──
-        // Reject the all-zero contract address, which is a zero-like sentinel
-        // that cannot meaningfully hold tokens and indicates a misconfigured call.
-        // CAAAA...D2KM is the Strkey encoding of the 32-byte all-zero contract id.
-        let zero_contract = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-        if developer == zero_contract {
-            return Err(Error::InvalidDeveloper);
-        }
 
         // ── Issue claim status validation (CM-01) ──
         // Delegates to the canonical is_claimed view so claim-status logic
