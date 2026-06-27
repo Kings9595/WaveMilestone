@@ -17,6 +17,7 @@ Built on Stellar Soroban and designed to integrate with [WaveGuard](https://gith
 - [Why WaveMilestone?](#why-wavemilestone)
 - [Target Users](#target-users)
 - [Architecture Overview](#architecture-overview)
+- [Asset Escrow Lifecycle](#asset-escrow-lifecycle)
 - [Smart Contract Design](#smart-contract-design)
   - [Storage Strategy](#storage-strategy)
   - [Authentication Design](#authentication-design)
@@ -116,6 +117,24 @@ During intensive, time-boxed sprints (e.g., Drips Wave's 1-week cycles), predict
 2. **Maintainer** (or CI) calls `release_issue_bounty` with the issue ID, developer address, and amount. The contract verifies the maintainer's authority via WaveGuard.
 3. **Contract** atomically marks the issue as claimed and transfers the payout.
 4. **Maintainer** can claw back unclaimed funds after the milestone deadline via `clawback_expired_funds`.
+
+---
+
+## Asset Escrow Lifecycle
+
+Tokens move through four distinct phases from deposit to final settlement:
+
+1. **Pool Creation — Deposit & Lock**
+   The maintainer calls `create_milestone_pool`, transferring `total_funds` from their wallet into the contract's asset vault. Tokens are locked on-chain and unavailable for withdrawal until the milestone concludes.
+
+2. **Issue Payout — Transfer to Developer**
+   When an issue is closed and merged, the maintainer (or CI) calls `release_issue_bounty`. The contract deducts the specified `amount` from the pool balance and atomically transfers it to the `developer` address. The issue is marked `completed = true`.
+
+3. **Duplicate Claim Protection — No Double-Spend**
+   Every claim is keyed by `(repo_hash, issue_id)`. If `release_issue_bounty` is called again for the same pair, the contract reverts with `BountyAlreadyClaimed` before touching any tokens — the pool balance is unchanged.
+
+4. **Clawback — Unclaimed Funds Returned**
+   After the milestone deadline, the maintainer calls `clawback_expired_funds`. Any remaining balance in the vault is transferred back to the maintainer, and the pool is cleared. No funds are ever stranded on-chain.
 
 ---
 

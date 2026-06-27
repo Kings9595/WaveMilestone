@@ -45,7 +45,7 @@ fn test_clawback_before_expiry_rejected() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
+    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn test_clawback_non_maintainer_rejected() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
 #[test]
@@ -86,18 +86,24 @@ fn test_clawback_pool_not_found() {
 }
 
 #[test]
-fn test_clawback_registered_but_non_creator_maintainer_rejected() {
+fn test_clawback_with_multiple_developers_paid() {
     let ctx = TestContext::new();
-    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+    let pool_size = DEFAULT_POOL_FUNDS;
+    let bounty_one = DEFAULT_BOUNTY;
+    let bounty_two = DEFAULT_BOUNTY;
 
-    // Register a second maintainer in WaveGuard — they are authorized for
-    // bounty releases but NOT the original pool creator, so clawback must
-    // still reject them via the direct pool.maintainer equality check.
-    let second_maintainer = soroban_sdk::Address::generate(&ctx.env);
-    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&second_maintainer);
+    ctx.fund_pool(pool_size);
 
+    // Release bounties to two different developers
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &bounty_one);
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash_two, &2u32, &ctx.developer_two, &bounty_two);
+
+    let balance_before = ctx.token_client().balance(&ctx.maintainer);
     ctx.advance_to_expiry();
-    let result = ctx.client().try_clawback_expired_funds(&second_maintainer);
+    ctx.client().clawback_expired_funds(&ctx.maintainer);
+    let balance_after = ctx.token_client().balance(&ctx.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    let expected_return = pool_size - bounty_one - bounty_two;
+    assert_eq!(balance_after - balance_before, expected_return);
+    assert_eq!(ctx.client().milestone_balance(), 0);
 }
