@@ -309,16 +309,18 @@ impl WaveMilestoneContract {
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
 
-        // ── WaveGuard validation ──
-        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
-
+        // ── Authorization ──
+        // Non-owners must pass the WaveGuard check first, then are still
+        // rejected with UnauthorizedCaller.  The pool owner bypasses WaveGuard
+        // so they can always recover their funds even if the guard is revoked.
         if maintainer != pool.maintainer {
+            ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
             return Err(Error::UnauthorizedCaller);
         }
 
         let now = env.ledger().timestamp();
         if now <= pool.expiry {
-            return Err(Error::ClawbackTooEarly);
+            return Err(Error::PoolNotExpired);
         }
 
         let remaining = pool.remaining_balance();
