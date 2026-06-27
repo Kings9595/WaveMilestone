@@ -1,7 +1,6 @@
 mod common;
 
 use common::*;
-use soroban_sdk::Address;
 use wave_milestone::types::Error;
 
 #[test]
@@ -89,18 +88,41 @@ fn test_consecutive_bounties_different_issues() {
     assert_eq!(ctx.client().milestone_balance(), expected_remaining);
 }
 
-/// Issue #109: Sending a bounty to the all-zero contract address must be
-/// rejected before any state mutation or token transfer.
+/// Issue #109: Sending a bounty to the contract itself must be rejected —
+/// tokens would be trapped with no recovery path.
 #[test]
 fn test_release_bounty_zero_developer_rejected() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
 
-    let zero_addr = Address::from_str(&ctx.env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-
     let result =
-        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &zero_addr, &DEFAULT_BOUNTY);
+        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.contract_id, &DEFAULT_BOUNTY);
 
     assert_eq!(result.err().unwrap(), Ok(Error::InvalidDeveloper));
     assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
+}
+
+/// Issue #22: `is_claimed` must return `false` before release and `true`
+/// immediately after a successful `release_issue_bounty` call.
+#[test]
+fn test_is_claimed_true_after_release() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    // Not yet claimed.
+    assert!(!ctx.client().is_claimed(&ctx.repo_hash, &1u32));
+
+    ctx.client().release_issue_bounty(
+        &ctx.maintainer,
+        &ctx.repo_hash,
+        &1u32,
+        &ctx.developer,
+        &DEFAULT_BOUNTY,
+    );
+
+    // Must be true after a successful release.
+    assert!(ctx.client().is_claimed(&ctx.repo_hash, &1u32));
+
+    // A different issue on the same repo must remain unclaimed.
+    assert!(!ctx.client().is_claimed(&ctx.repo_hash, &2u32));
 }

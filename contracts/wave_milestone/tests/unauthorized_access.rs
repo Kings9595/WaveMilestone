@@ -35,7 +35,7 @@ fn test_stranger_cannot_clawback() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn test_removed_maintainer_can_still_clawback() {
     ctx.advance_to_expiry();
 
     // Clawback should still succeed — address equality, not WaveGuard, guards this path.
-    ctx.client().clawback_expired_funds(&ctx.maintainer).unwrap();
+    ctx.client().clawback_expired_funds(&ctx.maintainer);
 
     assert_eq!(ctx.client().milestone_balance(), 0);
 }

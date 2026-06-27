@@ -240,11 +240,9 @@ impl WaveMilestoneContract {
         ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         // ── Developer address validation (issue #109) ──
-        // Reject the all-zero contract address, which is a zero-like sentinel
-        // that cannot meaningfully hold tokens and indicates a misconfigured call.
-        // CAAAA...D2KM is the Strkey encoding of the 32-byte all-zero contract id.
-        let zero_contract = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-        if developer == zero_contract {
+        // Reject a payout directed back to this contract — tokens sent to the
+        // contract vault are not recoverable through normal bounty claims.
+        if developer == env.current_contract_address() {
             return Err(Error::InvalidDeveloper);
         }
 
@@ -298,8 +296,10 @@ impl WaveMilestoneContract {
     ///
     /// # Auth
     /// - `maintainer.require_auth()` — the caller must sign.
-    /// - WaveGuard `is_maintainer` check passes.
     /// - `maintainer` must match `pool.maintainer` (address equality check).
+    ///   WaveGuard is intentionally NOT re-checked here: clawback is isolated
+    ///   from the WaveGuard registry so that even a compromised registry cannot
+    ///   block the pool creator from recovering their own funds.
     pub fn clawback_expired_funds(env: Env, maintainer: Address) -> Result<(), Error> {
         maintainer.require_auth();
 
@@ -309,9 +309,7 @@ impl WaveMilestoneContract {
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
 
-        // ── WaveGuard validation ──
-        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
-
+        // ── Address equality only — WaveGuard intentionally bypassed (see doc) ──
         if maintainer != pool.maintainer {
             return Err(Error::UnauthorizedCaller);
         }

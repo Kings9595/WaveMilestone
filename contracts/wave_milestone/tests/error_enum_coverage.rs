@@ -20,7 +20,7 @@ fn test_error_pool_not_found_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
-// ── PoolNotExpired (2) ───────────────────────────────────────
+// ── ClawbackTooEarly (2) ─────────────────────────────────────
 
 #[test]
 fn test_error_pool_not_expired() {
@@ -28,7 +28,7 @@ fn test_error_pool_not_expired() {
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
     // Clawback before expiry — ledger is still before ctx.expiry
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
-    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
+    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
 }
 
 // ── BountyAlreadyClaimed (3) ─────────────────────────────────
@@ -103,13 +103,13 @@ fn test_error_no_funds_to_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::NoFundsToClawback));
 }
 
-// ── TransferFailed (8) ───────────────────────────────────────
+// ── TransferFailed (9) ───────────────────────────────────────
 // Not currently returned by the contract (reserved for future use).
 // Assert the discriminant value is correct so enum layout is pinned.
 
 #[test]
 fn test_error_transfer_failed_discriminant() {
-    assert_eq!(Error::TransferFailed as u32, 8);
+    assert_eq!(Error::TransferFailed as u32, 9);
 }
 
 // ── InvalidAmount (9) ────────────────────────────────────────
