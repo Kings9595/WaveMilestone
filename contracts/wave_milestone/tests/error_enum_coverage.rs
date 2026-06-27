@@ -20,7 +20,7 @@ fn test_error_pool_not_found_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
-// ── PoolNotExpired (2) ───────────────────────────────────────
+// ── ClawbackTooEarly (2) ─────────────────────────────────────
 
 #[test]
 fn test_error_pool_not_expired() {
@@ -28,7 +28,7 @@ fn test_error_pool_not_expired() {
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
     // Clawback before expiry — ledger is still before ctx.expiry
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
-    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
+    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
 }
 
 // ── BountyAlreadyClaimed (3) ─────────────────────────────────
@@ -85,6 +85,9 @@ fn test_error_unauthorized_maintainer_release_bounty() {
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
+    // Register stranger as a WaveGuard maintainer so the WaveGuard check passes,
+    // but stranger is not the pool owner — must get UnauthorizedCaller.
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&ctx.stranger);
     ctx.advance_to_expiry();
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
@@ -109,7 +112,7 @@ fn test_error_no_funds_to_clawback() {
 
 #[test]
 fn test_error_transfer_failed_discriminant() {
-    assert_eq!(Error::TransferFailed as u32, 8);
+    assert_eq!(Error::TransferFailed as u32, 9);
 }
 
 // ── InvalidAmount (9) ────────────────────────────────────────

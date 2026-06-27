@@ -56,7 +56,8 @@ fn test_clawback_non_maintainer_rejected() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    // Clawback uses pool.maintainer address equality (WaveGuard bypassed) → UnauthorizedCaller.
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
 #[test]
