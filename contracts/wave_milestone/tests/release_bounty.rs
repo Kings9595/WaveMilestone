@@ -91,9 +91,10 @@ fn test_consecutive_bounties_different_issues() {
 /// Issue #109: Sending a bounty to the contract itself must be rejected —
 /// tokens would be trapped with no recovery path.
 #[test]
-fn test_release_bounty_zero_developer_rejected() {
+fn test_release_bounty_exceeds_remaining_balance_rejected() {
     let ctx = TestContext::new();
-    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+    let pool_size = 1_000_000_000u128;
+    ctx.fund_pool(pool_size);
 
     let result =
         ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.contract_id, &DEFAULT_BOUNTY);
