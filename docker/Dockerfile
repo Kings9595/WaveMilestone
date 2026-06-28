@@ -37,12 +37,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libssl-dev \
     curl \
+    libdbus-1-dev \
+    libudev-dev \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rustup target add wasm32-unknown-unknown
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
-    && cargo install --locked soroban-cli
+RUN cargo install --locked soroban-cli@22.6.0
 
 WORKDIR /app
 COPY . .
