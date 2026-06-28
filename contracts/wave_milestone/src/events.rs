@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, Address, BytesN};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol};
 
 // ─────────────────────────────────────────────────────────────
 // Contract Events
@@ -9,6 +9,7 @@ use soroban_sdk::{contracttype, Address, BytesN};
 pub const TOPIC_POOL_CREATED: &str = "milestone_pool_created";
 pub const TOPIC_BOUNTY_RELEASED: &str = "bounty_released";
 pub const TOPIC_FUNDS_CLAWED_BACK: &str = "funds_clawed_back";
+pub const TOPIC_MAINTAINER_AUTH_FAILED: &str = "maintainer_auth_failed";
 
 #[derive(Clone)]
 #[contracttype]
@@ -28,9 +29,17 @@ pub struct BountyReleasedEvent {
     pub amount: u128,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct FundsClawedBackEvent {
     pub maintainer: Address,
     pub amount: u128,
+}
+
+#[derive(Clone)]
+#[contracttype]
+pub struct MaintainerAuthFailedEvent {
+    pub maintainer: Address,
+    pub reason: Symbol,
+    pub guard_contract: Address,
 }
