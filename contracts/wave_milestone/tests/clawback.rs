@@ -45,7 +45,7 @@ fn test_clawback_before_expiry_rejected() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
+    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
 }
 
 #[test]
@@ -83,4 +83,27 @@ fn test_clawback_pool_not_found() {
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
 
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
+}
+
+#[test]
+fn test_clawback_with_multiple_developers_paid() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+    let bounty_one = DEFAULT_BOUNTY;
+    let bounty_two = DEFAULT_BOUNTY;
+
+    ctx.fund_pool(pool_size);
+
+    // Release bounties to two different developers
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &bounty_one);
+    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash_two, &2u32, &ctx.developer_two, &bounty_two);
+
+    let balance_before = ctx.token_client().balance(&ctx.maintainer);
+    ctx.advance_to_expiry();
+    ctx.client().clawback_expired_funds(&ctx.maintainer);
+    let balance_after = ctx.token_client().balance(&ctx.maintainer);
+
+    let expected_return = pool_size - bounty_one - bounty_two;
+    assert_eq!(balance_after - balance_before, expected_return);
+    assert_eq!(ctx.client().milestone_balance(), 0);
 }
