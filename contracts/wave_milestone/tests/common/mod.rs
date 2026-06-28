@@ -47,8 +47,8 @@ impl TestContext {
 
         let contract_id = env.register(WaveMilestoneContract, ());
 
-        let repo_hash = BytesN::from_array(&env, &[0u8; 32]);
-        let repo_hash_two = BytesN::from_array(&env, &[1u8; 32]);
+        let repo_hash = BytesN::from_array(&env, &[1u8; 32]);
+        let repo_hash_two = BytesN::from_array(&env, &[2u8; 32]);
         let now = env.ledger().timestamp();
         let expiry = now + 2_592_000;
 

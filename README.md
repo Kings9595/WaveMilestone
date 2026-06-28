@@ -17,6 +17,7 @@ Built on Stellar Soroban and designed to integrate with [WaveGuard](https://gith
 - [Why WaveMilestone?](#why-wavemilestone)
 - [Target Users](#target-users)
 - [Architecture Overview](#architecture-overview)
+- [Asset Escrow Lifecycle](#asset-escrow-lifecycle)
 - [Smart Contract Design](#smart-contract-design)
   - [Storage Strategy](#storage-strategy)
   - [Authentication Design](#authentication-design)
@@ -119,15 +120,32 @@ During intensive, time-boxed sprints (e.g., Drips Wave's 1-week cycles), predict
 
 ---
 
+## Asset Escrow Lifecycle
+
+Tokens move through four distinct phases from deposit to final settlement:
+
+1. **Pool Creation — Deposit & Lock**
+   The maintainer calls `create_milestone_pool`, transferring `total_funds` from their wallet into the contract's asset vault. Tokens are locked on-chain and unavailable for withdrawal until the milestone concludes.
+
+2. **Issue Payout — Transfer to Developer**
+   When an issue is closed and merged, the maintainer (or CI) calls `release_issue_bounty`. The contract deducts the specified `amount` from the pool balance and atomically transfers it to the `developer` address. The issue is marked `completed = true`.
+
+3. **Duplicate Claim Protection — No Double-Spend**
+   Every claim is keyed by `(repo_hash, issue_id)`. If `release_issue_bounty` is called again for the same pair, the contract reverts with `BountyAlreadyClaimed` before touching any tokens — the pool balance is unchanged.
+
+4. **Clawback — Unclaimed Funds Returned**
+   After the milestone deadline, the maintainer calls `clawback_expired_funds`. Any remaining balance in the vault is transferred back to the maintainer, and the pool is cleared. No funds are ever stranded on-chain.
+
+---
+
 ## Smart Contract Design
 
 ### Storage Strategy
 
 | Storage Tier | Data | Key Schema | Rationale |
 |-------------|------|-----------|-----------|
-| **Instance** | Milestone pool metadata (asset address, total budget, guard contract ref) | `MilestonePoolKey` (singleton) | Persists for the contract's lifetime; cheap one-time bump. |
-| **Instance** | Per-milestone aggregate data | `MilestoneDataKey(repo_hash)` | Tracks total allocated, remaining balance, and expiry per repo. |
-| **Temporary** | Individual issue claim status | `IssueClaimKey(repo_hash, issue_id)` → `MilestoneAllocation` | Massive gas savings; claims are single-use and short-lived. |
+| **Instance** | Milestone pool metadata (asset address, total budget, guard contract ref) | `DataKey::Pool` (singleton) | Persists for the contract's lifetime; cheap one-time bump. |
+| **Persistent** | Individual issue claim records | `DataKey::IssueClaim(repo_hash, issue_id)` → `IssueClaim` | Security fix (CM-01): Temporary storage TTL expiry allowed replay attacks. Persistent storage ensures the duplicate-claim guard is durable for the contract's lifetime. |
 
 ### Authentication Design
 
@@ -143,15 +161,17 @@ Failed validation → `BountyAlreadyClaimed` or `UnauthorizedMaintainer` error (
 ```rust
 #[derive(Clone)]
 #[contracttype]
-pub struct MilestoneAllocation {
+pub struct IssueClaim {
     pub issue_id: u32,
     pub developer: Address,
     pub payment_amount: u128,
     pub completed: bool,
+    pub maintainer: Address,
+    pub claimed_at: u64,
 }
 ```
 
-Allocation structs are stored under a composite key of `(repo_hash, issue_id)`, guaranteeing uniqueness across issues.
+Claim records are stored under a composite key of `(repo_hash, issue_id)`, guaranteeing uniqueness across repositories. Each record includes the `maintainer` who authorized the payout and the `claimed_at` ledger timestamp for auditing.
 
 ---
 
@@ -279,7 +299,7 @@ To integrate:
 
 ### Duplicate Claim Prevention (Drain Attacks)
 
-The contract uses a **strict composite storage key** combining `repo_hash + issue_id`. Once `completed` is set to `true`, any subsequent `release_issue_bounty` for that exact `(repo_hash, issue_id)` pair **immediately reverts** with a `BountyAlreadyClaimed` error code — before any token transfer occurs.
+The contract uses a **strict composite storage key** combining `repo_hash + issue_id`. Claim records are stored in **Persistent** storage (security fix CM-01), ensuring the duplicate-claim guard survives for the contract's lifetime. Once `completed` is set to `true`, any subsequent `release_issue_bounty` for that exact `(repo_hash, issue_id)` pair **immediately reverts** with a `BountyAlreadyClaimed` error code — before any token transfer occurs.
 
 ### Balance Overflow Protection
 
