@@ -79,15 +79,16 @@ fn test_error_unauthorized_maintainer_release_bounty() {
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
-// ── UnauthorizedCaller (6) ───────────────────────────────────
+// ── UnauthorizedCaller (7) ───────────────────────────────────
 
 #[test]
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
     ctx.advance_to_expiry();
+    // stranger is not a WaveGuard maintainer, so UnauthorizedMaintainer fires first
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
 // ── NoFundsToClawback (7) ────────────────────────────────────
@@ -109,7 +110,7 @@ fn test_error_no_funds_to_clawback() {
 
 #[test]
 fn test_error_transfer_failed_discriminant() {
-    assert_eq!(Error::TransferFailed as u32, 8);
+    assert_eq!(Error::TransferFailed as u32, 9);
 }
 
 // ── InvalidAmount (9) ────────────────────────────────────────

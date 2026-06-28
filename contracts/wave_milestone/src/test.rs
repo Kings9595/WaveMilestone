@@ -587,7 +587,11 @@ fn test_revoked_maintainer_cannot_clawback() {
     WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .clawback_expired_funds(&t.maintainer);
 
-    assert_eq!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(), 0);
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(),
+        pool_size
+    );
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
@@ -658,7 +662,7 @@ fn test_maintainer_self_payout_is_not_blocked() {
         &t.maintainer,
         &t.repo_hash,
         &1u32,
-        &t.developer, // developer == another address controlled by maintainer
+        &t.developer, // any valid non-zero address is permitted
         &bounty,
     );
 

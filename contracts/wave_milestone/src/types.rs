@@ -138,10 +138,8 @@ pub enum Error {
     TransferFailed = 9,
     InvalidAmount = 10,
     ExpiryInPast = 11,
-    PoolAlreadyExists = 12,
-    InvalidExpiry = 13,
-    InvalidRepoHash = 14,
-    InvalidDeveloper = 15,
+    InvalidRepoHash = 12,
+    InvalidDeveloper = 13,
 }
 
 // ─────────────────────────────────────────────────────────────
