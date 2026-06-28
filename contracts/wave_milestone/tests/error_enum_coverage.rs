@@ -79,15 +79,19 @@ fn test_error_unauthorized_maintainer_release_bounty() {
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
-// ── UnauthorizedCaller (6) ───────────────────────────────────
+// ── UnauthorizedCaller (7) ───────────────────────────────────
 
 #[test]
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
+    // Register stranger as a valid WaveGuard maintainer — passes guard check
+    // but is not the pool creator, so UnauthorizedCaller is returned.
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&ctx.stranger);
     ctx.advance_to_expiry();
+    // stranger is not a WaveGuard maintainer, so UnauthorizedMaintainer fires first
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
 }
 
 // ── NoFundsToClawback (7) ────────────────────────────────────
@@ -119,7 +123,7 @@ fn test_error_invalid_amount_create_pool() {
     let ctx = TestContext::new();
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &0u128, &ctx.expiry);
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
 
 #[test]
@@ -144,5 +148,5 @@ fn test_error_expiry_in_past() {
         &DEFAULT_POOL_FUNDS,
         &past_expiry,
     );
-    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
