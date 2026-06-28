@@ -20,7 +20,7 @@ fn test_error_pool_not_found_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
-// ── PoolNotExpired (2) ───────────────────────────────────────
+// ── ClawbackTooEarly (2) ─────────────────────────────────────
 
 #[test]
 fn test_error_pool_not_expired() {
@@ -107,7 +107,7 @@ fn test_error_no_funds_to_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::NoFundsToClawback));
 }
 
-// ── TransferFailed (8) ───────────────────────────────────────
+// ── TransferFailed (9) ───────────────────────────────────────
 // Not currently returned by the contract (reserved for future use).
 // Assert the discriminant value is correct so enum layout is pinned.
 

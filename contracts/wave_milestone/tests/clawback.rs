@@ -59,6 +59,10 @@ fn test_clawback_non_maintainer_rejected() {
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+}
+
+#[test]
+fn test_clawback_when_pool_empty_rejected() {
     let ctx = TestContext::new();
     let pool_size = DEFAULT_POOL_FUNDS;
 

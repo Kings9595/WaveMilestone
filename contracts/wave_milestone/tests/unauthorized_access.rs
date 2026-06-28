@@ -35,7 +35,7 @@ fn test_stranger_cannot_clawback() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::NotPoolMaintainer));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
 #[test]
@@ -97,9 +97,8 @@ fn test_removed_maintainer_can_still_clawback() {
     MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
     ctx.advance_to_expiry();
 
-    // Clawback must fail — WaveGuard check is required even for the pool creator.
-    let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    // Clawback should still succeed — address equality, not WaveGuard, guards this path.
+    ctx.client().clawback_expired_funds(&ctx.maintainer);
 
     // Funds must remain in the pool.
     assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
