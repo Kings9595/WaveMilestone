@@ -125,9 +125,7 @@ pub enum DataKey {
 pub enum Error {
     /// No milestone pool has been created yet.
     PoolNotFound = 1,
-    /// The pool has not yet reached its expiry timestamp.
     PoolNotExpired = 2,
-    /// The `(repo_hash, issue_id)` pair has already been paid out.
     BountyAlreadyClaimed = 3,
     /// The pool's remaining balance is less than the requested bounty amount.
     InsufficientPoolBalance = 4,

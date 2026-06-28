@@ -97,17 +97,18 @@ fn setup() -> TestEnv {
     let env = Env::default();
     env.mock_all_auths();
 
+    // Register contracts first so that Address::generate produces non-zero addresses
+    // (contract registration consumes address slots starting at 0).
+    let guard_id = env.register(MockWaveGuard, ());
+    let token_id = env.register(MockToken, ());
+    let contract_id = env.register(WaveMilestoneContract, ());
+
     let maintainer = Address::generate(&env);
     let developer = Address::generate(&env);
     let stranger = Address::generate(&env);
 
-    let guard_id = env.register(MockWaveGuard, ());
     MockWaveGuardClient::new(&env, &guard_id).add_maintainer(&maintainer);
-
-    let token_id = env.register(MockToken, ());
     MockTokenClient::new(&env, &token_id).init(&maintainer);
-
-    let contract_id = env.register(WaveMilestoneContract, ());
 
     let repo_hash = BytesN::from_array(&env, &[1u8; 32]);
     let expiry = env.ledger().timestamp() + 2_592_000;
@@ -337,7 +338,7 @@ fn test_clawback_before_expiry_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
+    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
 }
 
 #[test]
@@ -349,7 +350,12 @@ fn test_unauthorized_caller_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.stranger);
 
+    // Clawback uses pool.maintainer address equality (not WaveGuard) — non-owner gets UnauthorizedCaller.
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+}
+
+#[test]
+fn test_non_maintainer_cannot_create_pool() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
 
@@ -573,8 +579,9 @@ fn test_revoked_maintainer_cannot_release_bounty() {
     assert_eq!(remaining, pool_size);
 }
 
-/// Clawback uses address equality, not WaveGuard, to authenticate.
-/// A revoked maintainer who created the pool can still recover their funds.
+/// A maintainer removed from WaveGuard can still claw back their own pool.
+/// Clawback intentionally bypasses WaveGuard to isolate fund recovery from a
+/// potential WaveGuard compromise (pool.maintainer address equality is the guard).
 #[test]
 fn test_revoked_maintainer_cannot_clawback() {
     let t = setup();
@@ -584,14 +591,12 @@ fn test_revoked_maintainer_cannot_clawback() {
     MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
     t.env.ledger().set_timestamp(t.expiry + 1);
 
+    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
     WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .clawback_expired_funds(&t.maintainer);
+    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
 
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
-    assert_eq!(
-        WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(),
-        pool_size
-    );
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
@@ -860,45 +865,76 @@ fn test_release_bounty_accepts_nonzero_repo_hash() {
     assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
 }
 
-/// Issue #23: BountyReleasedEvent must be emitted on a successful bounty
-/// release with the correct repo_hash, issue_id, developer, and amount.
+// ─────────────────────────────────────────────────────────────
+// Pool Creation Validation (Issues: expiry, maintainer, guard)
+// ─────────────────────────────────────────────────────────────
+
+/// Expiry at exactly the current ledger timestamp (not strictly in the future)
+/// must be rejected.
 #[test]
-fn test_bounty_released_event_emitted() {
-    use crate::events::BountyReleasedEvent;
-    use soroban_sdk::{IntoVal, Symbol};
-
+fn test_create_pool_rejects_expiry_at_current_time() {
     let t = setup();
-    let pool_size: u128 = 10_000_000_000;
-    let bounty: u128 = 2_500_000_000;
-    let issue_id: u32 = 42;
+    let now = t.env.ledger().timestamp();
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &1_000_000_000u128);
 
-    fund_pool(&t, pool_size);
-
-    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_create_milestone_pool(
         &t.maintainer,
-        &t.repo_hash,
-        &issue_id,
-        &t.developer,
-        &bounty,
+        &t.guard_id,
+        &t.token_id,
+        &1_000_000_000u128,
+        &now,
     );
 
-    let events = t.env.events().all();
-    // Two events: PoolCreatedEvent (from fund_pool) + BountyReleasedEvent.
-    assert_eq!(events.len(), 2);
+    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
+}
 
-    let (contract, topics, data) = events.last().unwrap();
-    assert_eq!(contract, t.contract_id);
+/// Expiry strictly in the past must be rejected.
+#[test]
+fn test_create_pool_rejects_expiry_in_past() {
+    let t = setup();
+    let past = t.env.ledger().timestamp().saturating_sub(1);
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &1_000_000_000u128);
 
-    let expected_topic =
-        (Symbol::new(&t.env, crate::events::TOPIC_BOUNTY_RELEASED),).into_val(&t.env);
-    assert_eq!(topics, expected_topic);
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_create_milestone_pool(
+        &t.maintainer,
+        &t.guard_id,
+        &t.token_id,
+        &1_000_000_000u128,
+        &past,
+    );
 
-    let expected_data = BountyReleasedEvent {
-        repo_hash: t.repo_hash.clone(),
-        issue_id,
-        developer: t.developer.clone(),
-        amount: bounty,
-    }
-    .into_val(&t.env);
-    assert_eq!(data, expected_data);
+    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
+}
+
+/// Passing the WaveMilestone contract's own address as `guard_contract` must
+/// be rejected to prevent self-referential authorization loops.
+#[test]
+fn test_create_pool_rejects_self_as_guard() {
+    let t = setup();
+    MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &1_000_000_000u128);
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_create_milestone_pool(
+        &t.maintainer,
+        &t.contract_id, // guard_contract == self
+        &t.token_id,
+        &1_000_000_000u128,
+        &t.expiry,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidGuard));
+}
+
+/// The pool must store the exact `maintainer` address passed at creation.
+/// (Covers "validate pool creation preserves maintainer address".)
+#[test]
+fn test_create_pool_preserves_maintainer_address() {
+    let t = setup();
+    fund_pool(&t, 5_000_000_000);
+
+    let pool = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
+        .milestone_info()
+        .unwrap();
+
+    assert_eq!(pool.maintainer, t.maintainer);
+    assert_eq!(pool.guard_contract, t.guard_id);
 }

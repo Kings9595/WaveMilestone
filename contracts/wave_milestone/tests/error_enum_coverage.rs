@@ -20,7 +20,7 @@ fn test_error_pool_not_found_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::PoolNotFound));
 }
 
-// ── PoolNotExpired (2) ───────────────────────────────────────
+// ── ClawbackTooEarly (2) ─────────────────────────────────────
 
 #[test]
 fn test_error_pool_not_expired() {
@@ -85,6 +85,9 @@ fn test_error_unauthorized_maintainer_release_bounty() {
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
+    // Register stranger as a WaveGuard maintainer so the WaveGuard check passes,
+    // but stranger is not the pool owner — must get UnauthorizedCaller.
+    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&ctx.stranger);
     ctx.advance_to_expiry();
     // stranger is not a WaveGuard maintainer, so UnauthorizedMaintainer fires first
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
@@ -104,7 +107,7 @@ fn test_error_no_funds_to_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::NoFundsToClawback));
 }
 
-// ── TransferFailed (8) ───────────────────────────────────────
+// ── TransferFailed (9) ───────────────────────────────────────
 // Not currently returned by the contract (reserved for future use).
 // Assert the discriminant value is correct so enum layout is pinned.
 
