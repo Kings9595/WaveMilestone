@@ -1,7 +1,6 @@
 mod common;
 
 use common::*;
-use soroban_sdk::Address;
 use wave_milestone::types::Error;
 
 #[test]
@@ -89,19 +88,40 @@ fn test_consecutive_bounties_different_issues() {
     assert_eq!(ctx.client().milestone_balance(), expected_remaining);
 }
 
-/// Characterization: the all-zero contract address is no longer rejected
-/// at the contract level — developer address validation is delegated to
-/// the token contract. A payout to that address will succeed if the token
-/// allows it. This test documents the current behavior.
+/// Issue #109: Sending a bounty to the contract itself must be rejected —
+/// tokens would be trapped with no recovery path.
 #[test]
 fn test_release_bounty_zero_developer_rejected() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
 
-    let zero_addr = Address::from_str(&ctx.env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-
-    // No contract-level InvalidDeveloper guard — transfer proceeds.
-    ctx.client().release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &zero_addr, &DEFAULT_BOUNTY);
+    let result =
+        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.contract_id, &DEFAULT_BOUNTY);
 
     assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS - DEFAULT_BOUNTY);
+}
+
+/// Issue #22: `is_claimed` must return `false` before release and `true`
+/// immediately after a successful `release_issue_bounty` call.
+#[test]
+fn test_is_claimed_true_after_release() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    // Not yet claimed.
+    assert!(!ctx.client().is_claimed(&ctx.repo_hash, &1u32));
+
+    ctx.client().release_issue_bounty(
+        &ctx.maintainer,
+        &ctx.repo_hash,
+        &1u32,
+        &ctx.developer,
+        &DEFAULT_BOUNTY,
+    );
+
+    // Must be true after a successful release.
+    assert!(ctx.client().is_claimed(&ctx.repo_hash, &1u32));
+
+    // A different issue on the same repo must remain unclaimed.
+    assert!(!ctx.client().is_claimed(&ctx.repo_hash, &2u32));
 }
