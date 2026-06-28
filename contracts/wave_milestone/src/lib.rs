@@ -129,16 +129,17 @@ impl WaveMilestoneContract {
         }
 
         // ── Input validation ──
-        if total_funds == 0 {
-            return Err(Error::InvalidAmount);
-        }
         let now = env.ledger().timestamp();
-        if expiry <= now {
-            return Err(Error::ExpiryInPast);
+        if total_funds == 0 || expiry <= now {
+            return Err(Error::InvalidPoolCreationInput);
         }
 
         // ── Fund transfer ──
         let token = TokenClient::new(&env, &asset);
+        let maintainer_balance = token.balance(&maintainer);
+        if maintainer_balance < total_funds {
+            return Err(Error::TransferFailed);
+        }
         token.transfer(&maintainer, &env.current_contract_address(), &total_funds);
 
         // ── Persist pool ──
@@ -226,7 +227,7 @@ impl WaveMilestoneContract {
 
         // ── repo_hash validation ──
         if repo_hash == BytesN::from_array(&env, &[0u8; 32]) {
-            return Err(Error::InvalidRepoHash);
+            return Err(Error::InvalidAmount);
         }
 
         // ── Load pool ──

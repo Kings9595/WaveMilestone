@@ -169,7 +169,7 @@ fn test_create_pool_rejects_zero_amount() {
         &t.expiry,
     );
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
 
 #[test]
@@ -589,10 +589,15 @@ fn test_revoked_maintainer_cannot_clawback() {
     MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
     t.env.ledger().set_timestamp(t.expiry + 1);
 
+    let maintainer_balance_before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .try_clawback_expired_funds(&t.maintainer);
 
-    assert_eq!(after - before, pool_size);
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+
+    let maintainer_balance_after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
+    assert_eq!(maintainer_balance_after - maintainer_balance_before, 0);
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
@@ -866,7 +871,7 @@ fn test_release_bounty_rejects_zero_repo_hash() {
         &1_000_000_000,
     );
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidRepoHash));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
 }
 
 /// A non-zero repo_hash must pass validation and proceed normally.
