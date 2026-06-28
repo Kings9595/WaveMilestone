@@ -588,10 +588,8 @@ fn test_revoked_maintainer_cannot_clawback() {
         .clawback_expired_funds(&t.maintainer);
 
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
-    assert_eq!(
-        WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(),
-        pool_size
-    );
+    // Pool funds must remain untouched.
+    assert_eq!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(), pool_size);
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue

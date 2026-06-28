@@ -138,7 +138,9 @@ pub enum Error {
     TransferFailed = 9,
     InvalidAmount = 10,
     ExpiryInPast = 11,
+    /// `repo_hash` is the all-zero sentinel value, indicating a misconfigured call.
     InvalidRepoHash = 12,
+    /// `developer` is a zero-like address that cannot hold tokens.
     InvalidDeveloper = 13,
 }
 
