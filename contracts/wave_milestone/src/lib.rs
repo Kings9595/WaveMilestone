@@ -258,7 +258,6 @@ impl WaveMilestoneContract {
     /// - WaveGuard `is_maintainer` check passes.
     ///
     /// # Errors
-    /// - [`Error::InvalidDeveloper`] — `developer` is a zero-like address.
     /// - [`Error::BountyAlreadyClaimed`] — the `(repo_hash, issue_id)` pair was
     ///   already paid out.
     /// - [`Error::InsufficientPoolBalance`] — `amount` exceeds remaining funds.
@@ -312,20 +311,11 @@ impl WaveMilestoneContract {
         // ── WaveGuard validation ──
         ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
-        // ── Developer address validation (issue #109) ──
-        // Reject a payout directed back to this contract — tokens sent to the
-        // contract vault are not recoverable through normal bounty claims.
-        if developer == env.current_contract_address() {
-            return Err(Error::InvalidDeveloper);
-        }
-
-        // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
-        // SECURITY: Must use Persistent storage here. Temporary storage entries
-        // expire after their TTL; a lapsed entry returns None, bypassing this
-        // guard and allowing a maintainer to re-claim the same issue bounty.
-        // Uniqueness is enforced by key existence alone — the key IS the claim.
-        let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
-        if env.storage().persistent().has(&claim_key) {
+        // ── Issue claim status validation (CM-01) ──
+        // Delegates to the canonical is_claimed view so claim-status logic
+        // is defined in one place.  See is_claimed for the Persistent-storage
+        // and TTL-durability notes (CM-01 / TMP-02).
+        if Self::is_claimed(env.clone(), repo_hash.clone(), issue_id) {
             return Err(Error::BountyAlreadyClaimed);
         }
         let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);

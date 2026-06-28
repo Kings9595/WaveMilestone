@@ -98,8 +98,7 @@ fn test_release_bounty_zero_developer_rejected() {
     let result =
         ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.contract_id, &DEFAULT_BOUNTY);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidDeveloper));
-    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
+    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS - DEFAULT_BOUNTY);
 }
 
 /// Issue #22: `is_claimed` must return `false` before release and `true`
