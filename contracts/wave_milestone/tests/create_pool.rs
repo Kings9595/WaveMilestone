@@ -60,7 +60,7 @@ fn test_create_pool_rejects_zero_amount() {
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &0u128, &ctx.expiry);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
 
 /// Regression test: zero-fund pool creation must be a no-op.
@@ -80,6 +80,18 @@ fn test_create_pool_zero_funds_leaves_no_state() {
     assert!(ctx.client().milestone_info().is_none());
     // No tokens should have moved.
     assert_eq!(ctx.token_client().balance(&ctx.maintainer), initial_balance);
+}
+
+#[test]
+fn test_create_pool_rejects_transfer_failure_when_balance_is_insufficient() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+
+    let result =
+        ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &pool_size, &ctx.expiry);
+
+    assert_eq!(result.err().unwrap(), Ok(Error::TransferFailed));
+    assert!(ctx.client().milestone_info().is_none());
 }
 
 #[test]
@@ -114,12 +126,76 @@ fn test_create_pool_rejects_removed_maintainer() {
 fn test_create_pool_rejects_past_expiry() {
     let ctx = TestContext::new();
     let pool_size = DEFAULT_POOL_FUNDS;
-    let past_expiry = ctx.env.ledger().timestamp();
+    // Advance ledger past zero so we can provide a non-zero expiry that is still in the past.
+    ctx.env.ledger().set_timestamp(1_000);
+    let past_expiry = ctx.env.ledger().timestamp(); // expiry == now → rejected
 
     ctx.token_client().mint(&ctx.maintainer, &pool_size);
 
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &pool_size, &past_expiry);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+}
+
+#[test]
+fn test_create_pool_rejects_self_as_guard_contract() {
+    let ctx = TestContext::new();
+    let pool_size = DEFAULT_POOL_FUNDS;
+    ctx.token_client().mint(&ctx.maintainer, &pool_size);
+
+    // Passing the contract's own address as guard_contract is invalid.
+    let result = ctx.client().try_create_milestone_pool(
+        &ctx.maintainer,
+        &ctx.contract_id,
+        &ctx.token_id,
+        &pool_size,
+        &ctx.expiry,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::MissingGuardContract));
+}
+
+#[test]
+fn test_create_pool_rejects_zero_expiry() {
+    let ctx = TestContext::new();
+    ctx.token_client().mint(&ctx.maintainer, &DEFAULT_POOL_FUNDS);
+
+    let result = ctx.client().try_create_milestone_pool(
+        &ctx.maintainer,
+        &ctx.guard_id,
+        &ctx.token_id,
+        &DEFAULT_POOL_FUNDS,
+        &0u64,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidExpiry));
+}
+
+#[test]
+fn test_create_pool_rejects_duplicate() {
+    let ctx = TestContext::new();
+    ctx.fund_pool(DEFAULT_POOL_FUNDS);
+
+    ctx.token_client().mint(&ctx.maintainer, &DEFAULT_POOL_FUNDS);
+    let result = ctx.client().try_create_milestone_pool(
+        &ctx.maintainer,
+        &ctx.guard_id,
+        &ctx.token_id,
+        &DEFAULT_POOL_FUNDS,
+        &ctx.expiry,
+    );
+
+    assert_eq!(result.err().unwrap(), Ok(Error::PoolAlreadyExists));
+}
+
+#[test]
+fn test_create_pool_max_amount() {
+    let ctx = TestContext::new();
+    let max = u128::MAX;
+    ctx.token_client().mint(&ctx.maintainer, &max);
+
+    ctx.client().create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &max, &ctx.expiry);
+
+    assert_eq!(ctx.client().milestone_balance(), max);
 }
