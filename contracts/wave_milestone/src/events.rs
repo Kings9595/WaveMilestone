@@ -29,7 +29,7 @@ pub struct BountyReleasedEvent {
     pub amount: u128,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct FundsClawedBackEvent {
     pub maintainer: Address,

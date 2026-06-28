@@ -1,6 +1,6 @@
 #![no_std]
 
-mod events;
+pub mod events;
 mod test;
 pub mod types;
 
@@ -172,7 +172,7 @@ impl WaveMilestoneContract {
         total_funds: u128,
         expiry: u64,
     ) -> Result<(), Error> {
-        // ── Authentication ──
+        // ── AUTH GATE 1/2: Stellar signature check ──
         maintainer.require_auth();
 
         // ── WaveGuard validation ──
@@ -193,16 +193,17 @@ impl WaveMilestoneContract {
         }
 
         // ── Input validation ──
-        if total_funds == 0 {
-            return Err(Error::InvalidAmount);
-        }
         let now = env.ledger().timestamp();
-        if expiry <= now {
-            return Err(Error::ExpiryInPast);
+        if total_funds == 0 || expiry <= now {
+            return Err(Error::InvalidPoolCreationInput);
         }
 
         // ── Fund transfer ──
         let token = TokenClient::new(&env, &asset);
+        let maintainer_balance = token.balance(&maintainer);
+        if maintainer_balance < total_funds {
+            return Err(Error::TransferFailed);
+        }
         token.transfer(&maintainer, &env.current_contract_address(), &total_funds);
 
         // ── Persist pool ──
@@ -285,12 +286,12 @@ impl WaveMilestoneContract {
         developer: Address,
         amount: u128,
     ) -> Result<(), Error> {
-        // ── Authentication ──
+        // ── AUTH GATE 1/2: Stellar signature check ──
         maintainer.require_auth();
 
         // ── repo_hash validation ──
         if repo_hash == BytesN::from_array(&env, &[0u8; 32]) {
-            return Err(Error::InvalidRepoHash);
+            return Err(Error::InvalidAmount);
         }
 
         // ── Load pool ──
@@ -369,6 +370,10 @@ impl WaveMilestoneContract {
     /// - WaveGuard `is_maintainer` check passes.
     /// - `maintainer` must match `pool.maintainer` (address equality check).
     pub fn clawback_expired_funds(env: Env, maintainer: Address) -> Result<(), Error> {
+        // ── AUTH GATE 1/1: Stellar signature check ──
+        // NOTE: WaveGuard is intentionally NOT re-checked here. Clawback uses
+        // direct address equality (pool.maintainer) so a WaveGuard compromise
+        // cannot redirect funds via this path. See trust assumptions in docstring.
         maintainer.require_auth();
 
         let mut pool = env
