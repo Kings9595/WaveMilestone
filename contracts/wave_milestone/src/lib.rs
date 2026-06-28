@@ -194,8 +194,16 @@ impl WaveMilestoneContract {
 
         // ── Input validation ──
         let now = env.ledger().timestamp();
-        if total_funds == 0 || expiry <= now {
-            return Err(Error::InvalidPoolCreationInput);
+        if expiry == 0 {
+            return Err(Error::InvalidExpiry);
+        }
+        if expiry <= now {
+            return Err(Error::ExpiryInPast);
+        }
+
+        // ── Duplicate pool guard ──
+        if env.storage().instance().get::<_, MilestonePool>(&DataKey::Pool).is_some() {
+            return Err(Error::PoolAlreadyExists);
         }
 
         // ── Fund transfer ──
@@ -302,17 +310,13 @@ impl WaveMilestoneContract {
             .ok_or(Error::PoolNotFound)?;
 
         // ── WaveGuard validation ──
-        let guard = WaveGuardClient::new(&env, &pool.guard_contract);
-        if !guard.is_maintainer(&maintainer) {
-            env.events().publish(
-                (Symbol::new(&env, TOPIC_MAINTAINER_AUTH_FAILED),),
-                MaintainerAuthFailedEvent {
-                    maintainer: maintainer.clone(),
-                    reason: Symbol::new(&env, "not_registered"),
-                    guard_contract: pool.guard_contract.clone(),
-                },
-            );
-            return Err(Error::UnauthorizedMaintainer);
+        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
+
+        // ── Developer address validation (issue #109) ──
+        // Reject the all-zero contract address by comparing the raw 32-byte id.
+        // CAAAA...D2KM is the Strkey encoding of the 32-byte all-zero contract id.
+        if developer == Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM") {
+            return Err(Error::InvalidDeveloper);
         }
 
         // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
@@ -381,9 +385,6 @@ impl WaveMilestoneContract {
             .instance()
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
-
-        // ── WaveGuard validation ──
-        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         if maintainer != pool.maintainer {
             return Err(Error::NotPoolMaintainer);

@@ -131,18 +131,17 @@ pub enum Error {
     BountyAlreadyClaimed = 3,
     /// The pool's remaining balance is less than the requested bounty amount.
     InsufficientPoolBalance = 4,
-    /// The caller is not recognised as a maintainer by the WaveGuard registry.
-    UnauthorizedMaintainer = 5,
-    /// The caller does not match `pool.maintainer` (clawback requires pool ownership).
-    NotPoolMaintainer = 6,
-    /// The pool has no unclaimed funds left to claw back.
-    NoFundsToClawback = 7,
-    /// The underlying token transfer call failed.
-    TransferFailed = 8,
-    /// The provided amount is zero (not allowed).
-    InvalidAmount = 9,
-    /// The provided expiry timestamp is in the past.
-    ExpiryInPast = 10,
+    InvalidGuard = 5,
+    UnauthorizedMaintainer = 6,
+    UnauthorizedCaller = 7,
+    NoFundsToClawback = 8,
+    TransferFailed = 9,
+    InvalidAmount = 10,
+    ExpiryInPast = 11,
+    PoolAlreadyExists = 12,
+    InvalidExpiry = 13,
+    InvalidRepoHash = 14,
+    InvalidDeveloper = 15,
 }
 
 // ─────────────────────────────────────────────────────────────
