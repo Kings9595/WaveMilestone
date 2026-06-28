@@ -47,7 +47,7 @@ fn test_clawback_before_expiry_rejected() {
 
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
+    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
 }
 
 #[test]

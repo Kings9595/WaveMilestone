@@ -337,7 +337,7 @@ fn test_clawback_before_expiry_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
+    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
 }
 
 #[test]
@@ -573,8 +573,11 @@ fn test_revoked_maintainer_cannot_release_bounty() {
     assert_eq!(remaining, pool_size);
 }
 
-/// Clawback uses address equality, not WaveGuard, to authenticate.
-/// A revoked maintainer who created the pool can still recover their funds.
+/// A maintainer removed from the WaveGuard registry can no longer claw
+/// back expired funds as a non-owner. However, the pool *creator* always
+/// retains clawback rights regardless of registry status — clawback uses
+/// address equality only, bypassing WaveGuard so fund recovery is not
+/// blocked by a compromised or revoked registry (see trust assumptions).
 #[test]
 fn test_revoked_maintainer_cannot_clawback() {
     let t = setup();
@@ -584,8 +587,11 @@ fn test_revoked_maintainer_cannot_clawback() {
     MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
     t.env.ledger().set_timestamp(t.expiry + 1);
 
+    // Pool owner bypasses WaveGuard — clawback must succeed even after revocation.
+    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
     WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .clawback_expired_funds(&t.maintainer);
+    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
 
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
     // Pool funds must remain untouched.

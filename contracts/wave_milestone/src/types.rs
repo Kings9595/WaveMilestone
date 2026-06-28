@@ -125,22 +125,18 @@ pub enum DataKey {
 pub enum Error {
     /// No milestone pool has been created yet.
     PoolNotFound = 1,
-    /// The pool has not yet reached its expiry timestamp.
     PoolNotExpired = 2,
-    /// The `(repo_hash, issue_id)` pair has already been paid out.
     BountyAlreadyClaimed = 3,
     /// The pool's remaining balance is less than the requested bounty amount.
     InsufficientPoolBalance = 4,
-    InvalidGuard = 5,
-    UnauthorizedMaintainer = 6,
-    UnauthorizedCaller = 7,
-    NoFundsToClawback = 8,
-    TransferFailed = 9,
-    InvalidAmount = 10,
-    ExpiryInPast = 11,
-    /// `repo_hash` is the all-zero sentinel value, indicating a misconfigured call.
+    UnauthorizedMaintainer = 5,
+    UnauthorizedCaller = 6,
+    NoFundsToClawback = 7,
+    TransferFailed = 8,
+    InvalidAmount = 9,
+    ExpiryInPast = 10,
+    InvalidGuard = 11,
     InvalidRepoHash = 12,
-    /// `developer` is a zero-like address that cannot hold tokens.
     InvalidDeveloper = 13,
 }
 
