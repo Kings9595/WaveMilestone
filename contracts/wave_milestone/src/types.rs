@@ -65,6 +65,8 @@ impl MilestonePool {
 pub struct ClaimRecord {
     pub payment_amount: u128,
     pub completed: bool,
+    pub maintainer: Address,
+    pub claimed_at: u64,
 }
 
 // ─────────────────────────────────────────────────────────────
