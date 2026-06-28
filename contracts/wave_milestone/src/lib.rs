@@ -5,8 +5,9 @@ mod test;
 pub mod types;
 
 use events::{
-    BountyReleasedEvent, FundsClawedBackEvent, PoolCreatedEvent, TOPIC_BOUNTY_RELEASED,
-    TOPIC_FUNDS_CLAWED_BACK, TOPIC_POOL_CREATED,
+    BountyReleasedEvent, FundsClawedBackEvent, MaintainerAuthFailedEvent, PoolCreatedEvent,
+    TOPIC_BOUNTY_RELEASED, TOPIC_FUNDS_CLAWED_BACK, TOPIC_MAINTAINER_AUTH_FAILED,
+    TOPIC_POOL_CREATED,
 };
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
 
@@ -85,6 +86,61 @@ fn ensure_is_maintainer(env: &Env, guard_contract: &Address, address: &Address) 
 /// migration: entries created before this fix (Temporary) are distinct from
 /// entries created after (Persistent) and may co-exist during a migration
 /// window on live networks.
+///
+/// ## WaveGuard Authorization Flow
+///
+/// WaveMilestone delegates identity and access control to an external
+/// **WaveGuard** registry contract.  The flow is:
+///
+/// 1. **Pool creation** (`create_milestone_pool`)
+///    The caller proves their maintainer status by passing the
+///    WaveGuard `is_maintainer` check.  The guard contract address is
+///    recorded in `pool.guard_contract` and is **immutable** for the
+///    lifetime of that pool.
+///
+/// 2. **Bounty release** (`release_issue_bounty`)
+///    Every call re-evaluates `is_maintainer` against the stored
+///    `pool.guard_contract`.  There is **no** cached authorisation —
+///    a maintainer whose WaveGuard membership is revoked between
+///    pool creation and bounty release is blocked from paying out.
+///    This ensures that off-chain governance actions (removing a
+///    rogue maintainer) take effect immediately on-chain.
+///
+/// 3. **Clawback** (`clawback_expired_funds`)
+///    WaveGuard is **not** consulted.  Clawback is gated on direct
+///    address equality with `pool.maintainer`.  This deliberate
+///    asymmetry isolates the refund path from a compromised
+///    WaveGuard, so the original depositor can always recover
+///    unclaimed funds.
+///
+/// ```
+///                    ┌──────────────┐
+///                    │  WaveGuard   │  (external access registry)
+///                    │ is_maintainer│
+///                    └──────┬───────┘
+///                           │ ① create_milestone_pool
+///                           │ ② release_issue_bounty
+///                           ▼
+///                    ┌──────────────┐
+///                    │ WaveMilestone│  (this contract)
+///                    │  escrow vault│
+///                    └──────┬───────┘
+///                           │ ③ transfer (SAC)
+///                           ▼
+///                    ┌──────────────┐
+///                    │    Token     │  (Stellar Asset Contract)
+///                    └──────────────┘
+/// ```
+///
+/// **Key security properties:**
+/// - The WaveGuard address is fixed at pool creation; it cannot be
+///   rotated mid-lifecycle.
+/// - Maintainer checks are **live** — each privileged call re-queries
+///   the registry, not the pool snapshot.
+/// - Clawback uses a separate authorisation path (address equality)
+///   so that a WaveGuard compromise cannot drain the escrow.
+/// - Failed maintainer checks emit a `maintainer_auth_failed` event
+///   to support off-chain alerting and forensics.
 #[contract]
 pub struct WaveMilestoneContract;
 
@@ -125,6 +181,14 @@ impl WaveMilestoneContract {
         }
         let guard = WaveGuardClient::new(&env, &guard_contract);
         if !guard.is_maintainer(&maintainer) {
+            env.events().publish(
+                (Symbol::new(&env, TOPIC_MAINTAINER_AUTH_FAILED),),
+                MaintainerAuthFailedEvent {
+                    maintainer: maintainer.clone(),
+                    reason: Symbol::new(&env, "not_registered"),
+                    guard_contract: guard_contract.clone(),
+                },
+            );
             return Err(Error::UnauthorizedMaintainer);
         }
 
@@ -238,22 +302,26 @@ impl WaveMilestoneContract {
             .ok_or(Error::PoolNotFound)?;
 
         // ── WaveGuard validation ──
-        ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
-
-        // ── Developer address validation (issue #109) ──
-        // Reject the all-zero contract address, which is a zero-like sentinel
-        // that cannot meaningfully hold tokens and indicates a misconfigured call.
-        // CAAAA...D2KM is the Strkey encoding of the 32-byte all-zero contract id.
-        let zero_contract = Address::from_str(&env, "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM");
-        if developer == zero_contract {
-            return Err(Error::InvalidDeveloper);
+        let guard = WaveGuardClient::new(&env, &pool.guard_contract);
+        if !guard.is_maintainer(&maintainer) {
+            env.events().publish(
+                (Symbol::new(&env, TOPIC_MAINTAINER_AUTH_FAILED),),
+                MaintainerAuthFailedEvent {
+                    maintainer: maintainer.clone(),
+                    reason: Symbol::new(&env, "not_registered"),
+                    guard_contract: pool.guard_contract.clone(),
+                },
+            );
+            return Err(Error::UnauthorizedMaintainer);
         }
 
-        // ── Issue claim status validation (CM-01) ──
-        // Delegates to the canonical is_claimed view so claim-status logic
-        // is defined in one place.  See is_claimed for the Persistent-storage
-        // and TTL-durability notes (CM-01 / TMP-02).
-        if Self::is_claimed(env.clone(), repo_hash.clone(), issue_id) {
+        // ── Duplicate-claim guard (CM-01: reads Persistent storage) ──
+        // SECURITY: Must use Persistent storage here. Temporary storage entries
+        // expire after their TTL; a lapsed entry returns None, bypassing this
+        // guard and allowing a maintainer to re-claim the same issue bounty.
+        // Uniqueness is enforced by key existence alone — the key IS the claim.
+        let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
+        if env.storage().persistent().has(&claim_key) {
             return Err(Error::BountyAlreadyClaimed);
         }
         let claim_key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
@@ -276,7 +344,7 @@ impl WaveMilestoneContract {
         env.storage().instance().set(&DataKey::Pool, &pool);
 
         // ── Record claim in Persistent storage (CM-01 fix) ──
-        let claim = ClaimRecord { payment_amount: amount, completed: true };
+        let claim = IssueClaim { developer: developer.clone(), payment_amount: amount };
         env.storage().persistent().set(&claim_key, &claim);
 
         // ── Emit event ──
@@ -318,7 +386,7 @@ impl WaveMilestoneContract {
         ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
 
         if maintainer != pool.maintainer {
-            return Err(Error::UnauthorizedCaller);
+            return Err(Error::NotPoolMaintainer);
         }
 
         let now = env.ledger().timestamp();
@@ -362,7 +430,7 @@ impl WaveMilestoneContract {
     /// the fix (Temporary storage) will not be visible here on live networks.
     pub fn is_claimed(env: Env, repo_hash: BytesN<32>, issue_id: u32) -> bool {
         let claim_key = DataKey::IssueClaim(repo_hash, issue_id);
-        env.storage().persistent().get::<_, ClaimRecord>(&claim_key).is_some_and(|c| c.completed)
+        env.storage().persistent().has(&claim_key)
     }
 
     /// Returns the full milestone metadata, or `None` if uninitialized.

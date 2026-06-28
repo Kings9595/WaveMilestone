@@ -49,12 +49,17 @@ impl MilestonePool {
 /// the `developer` is available from the call context, so only the payout
 /// amount and completion flag are stored here.
 ///
+/// Uniqueness is enforced by the storage key `(repo_hash, issue_id)` — the
+/// `DataKey::IssueClaim` variant.  The mere presence of a record under that
+/// key means the claim has been paid; no separate `completed` flag is needed.
+///
 /// # Storage Note (Security — CM-01)
-/// Persistent storage is required.  A previous version used Temporary storage,
-/// whose entries expire after a ledger TTL.  Once pruned, the duplicate-claim
-/// guard would return `None`, allowing the same `(repo_hash, issue_id)` to be
-/// re-claimed.  Persistent storage ensures the guard is durable for the
-/// contract's lifetime.
+/// Stored in **Persistent** storage.  A previous version used Temporary
+/// storage, whose entries expire after a ledger TTL.  Once a Temporary entry
+/// is pruned, the duplicate-claim guard returns `None` for that key, allowing
+/// the same `(repo_hash, issue_id)` pair to be re-claimed.  Persistent storage
+/// ensures the claim record survives for the contract's lifetime, making the
+/// duplicate-claim guard durable.
 ///
 /// ## Temporary Storage Leakage Risk (TMP-01)
 /// Any future authorization state in Temporary storage (nonces, session flags)
@@ -62,11 +67,9 @@ impl MilestonePool {
 /// managed.  Authorization-critical state MUST use Instance or Persistent storage.
 #[contracttype]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ClaimRecord {
+pub struct IssueClaim {
+    pub developer: Address,
     pub payment_amount: u128,
-    pub completed: bool,
-    pub maintainer: Address,
-    pub claimed_at: u64,
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -112,23 +115,34 @@ pub enum DataKey {
 // Error Enum
 // ─────────────────────────────────────────────────────────────
 
+/// Contract-level error codes.
+///
+/// Each variant maps to a unique `u32` discriminant returned to the caller
+/// when the corresponding operation cannot be completed.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    /// No milestone pool has been created yet.
     PoolNotFound = 1,
-    ClawbackTooEarly = 2,
+    /// The pool has not yet reached its expiry timestamp.
+    PoolNotExpired = 2,
+    /// The `(repo_hash, issue_id)` pair has already been paid out.
     BountyAlreadyClaimed = 3,
+    /// The pool's remaining balance is less than the requested bounty amount.
     InsufficientPoolBalance = 4,
-    InvalidGuard = 5,
-    UnauthorizedMaintainer = 6,
-    UnauthorizedCaller = 7,
-    NoFundsToClawback = 8,
-    TransferFailed = 9,
-    InvalidAmount = 10,
-    ExpiryInPast = 11,
-    InvalidPoolCreationInput = 12,
-    InvalidDeveloper = 13,
+    /// The caller is not recognised as a maintainer by the WaveGuard registry.
+    UnauthorizedMaintainer = 5,
+    /// The caller does not match `pool.maintainer` (clawback requires pool ownership).
+    NotPoolMaintainer = 6,
+    /// The pool has no unclaimed funds left to claw back.
+    NoFundsToClawback = 7,
+    /// The underlying token transfer call failed.
+    TransferFailed = 8,
+    /// The provided amount is zero (not allowed).
+    InvalidAmount = 9,
+    /// The provided expiry timestamp is in the past.
+    ExpiryInPast = 10,
 }
 
 // ─────────────────────────────────────────────────────────────

@@ -349,7 +349,7 @@ fn test_unauthorized_caller_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(result.err().unwrap(), Ok(Error::NotPoolMaintainer));
 }
 
 #[test]
@@ -615,7 +615,7 @@ fn test_rogue_co_maintainer_cannot_clawback_others_pool() {
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .try_clawback_expired_funds(&t.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
+    assert_eq!(result.err().unwrap(), Ok(Error::NotPoolMaintainer));
 
     // Escrow stays put for the rightful owner.
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
