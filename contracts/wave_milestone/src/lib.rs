@@ -1,6 +1,6 @@
 #![no_std]
 
-mod events;
+pub mod events;
 mod test;
 pub mod types;
 
