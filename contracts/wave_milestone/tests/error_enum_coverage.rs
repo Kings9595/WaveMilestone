@@ -85,8 +85,8 @@ fn test_error_unauthorized_maintainer_release_bounty() {
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
-    // Register stranger as a valid WaveGuard maintainer — passes guard check
-    // but is not the pool creator, so UnauthorizedCaller is returned.
+    // Register stranger as a WaveGuard maintainer so the WaveGuard check passes,
+    // but stranger is not the pool owner — must get UnauthorizedCaller.
     MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&ctx.stranger);
     ctx.advance_to_expiry();
     // stranger is not a WaveGuard maintainer, so UnauthorizedMaintainer fires first

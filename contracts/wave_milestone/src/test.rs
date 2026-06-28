@@ -97,17 +97,18 @@ fn setup() -> TestEnv {
     let env = Env::default();
     env.mock_all_auths();
 
+    // Register contracts first so that Address::generate produces non-zero addresses
+    // (contract registration consumes address slots starting at 0).
+    let guard_id = env.register(MockWaveGuard, ());
+    let token_id = env.register(MockToken, ());
+    let contract_id = env.register(WaveMilestoneContract, ());
+
     let maintainer = Address::generate(&env);
     let developer = Address::generate(&env);
     let stranger = Address::generate(&env);
 
-    let guard_id = env.register(MockWaveGuard, ());
     MockWaveGuardClient::new(&env, &guard_id).add_maintainer(&maintainer);
-
-    let token_id = env.register(MockToken, ());
     MockTokenClient::new(&env, &token_id).init(&maintainer);
-
-    let contract_id = env.register(WaveMilestoneContract, ());
 
     let repo_hash = BytesN::from_array(&env, &[1u8; 32]);
     let expiry = env.ledger().timestamp() + 2_592_000;
@@ -349,6 +350,7 @@ fn test_unauthorized_caller_rejected() {
 
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_clawback_expired_funds(&t.stranger);
 
+    // Clawback uses pool.maintainer address equality (not WaveGuard) — non-owner gets UnauthorizedCaller.
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
@@ -577,9 +579,9 @@ fn test_revoked_maintainer_cannot_release_bounty() {
     assert_eq!(remaining, pool_size);
 }
 
-/// The pool creator can clawback even after being revoked from WaveGuard.
-/// Clawback uses address equality only — WaveGuard is intentionally bypassed
-/// so the creator can always recover their own funds.
+/// A maintainer removed from WaveGuard can still claw back their own pool.
+/// Clawback intentionally bypasses WaveGuard to isolate fund recovery from a
+/// potential WaveGuard compromise (pool.maintainer address equality is the guard).
 #[test]
 fn test_revoked_maintainer_cannot_clawback() {
     let t = setup();
@@ -589,9 +591,10 @@ fn test_revoked_maintainer_cannot_clawback() {
     MockWaveGuardClient::new(&t.env, &t.guard_id).remove_maintainer(&t.maintainer);
     t.env.ledger().set_timestamp(t.expiry + 1);
 
-    // Revoked pool creator can still clawback — WaveGuard is not checked.
+    let before = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
     WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .clawback_expired_funds(&t.maintainer);
+    let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
 
     assert_eq!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(), 0);
 }

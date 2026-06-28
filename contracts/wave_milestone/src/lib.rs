@@ -388,7 +388,10 @@ impl WaveMilestoneContract {
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
 
-        // ── Address equality only — WaveGuard intentionally bypassed (see doc) ──
+        // ── Ownership check (no WaveGuard re-check — see trust assumptions in MilestonePool) ──
+        // Clawback is restricted to the exact pool creator by address equality.
+        // WaveGuard is intentionally NOT consulted here to prevent a compromised
+        // or revoked WaveGuard registry from locking the pool creator out of their funds.
         if maintainer != pool.maintainer {
             ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
             return Err(Error::UnauthorizedCaller);
