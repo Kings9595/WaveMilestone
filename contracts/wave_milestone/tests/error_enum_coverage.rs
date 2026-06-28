@@ -119,7 +119,7 @@ fn test_error_invalid_amount_create_pool() {
     let ctx = TestContext::new();
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &0u128, &ctx.expiry);
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
 
 #[test]
@@ -144,5 +144,5 @@ fn test_error_expiry_in_past() {
         &DEFAULT_POOL_FUNDS,
         &past_expiry,
     );
-    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
 }
