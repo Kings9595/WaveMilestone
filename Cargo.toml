@@ -13,7 +13,7 @@ repository = "https://github.com/anomalyco/wave-milestone"
 homepage = "https://github.com/anomalyco/wave-milestone"
 
 [workspace.dependencies]
-soroban-sdk = { version = "22.0.0", default-features = false }
+soroban-sdk = { version = "26.1.0", default-features = false }
 
 [workspace.lints.clippy]
 all = "deny"
