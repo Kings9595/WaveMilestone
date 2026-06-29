@@ -85,10 +85,9 @@ fn test_registered_non_creator_maintainer_cannot_clawback() {
     assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
-/// Pool creator removed from WaveGuard cannot clawback.
-/// Clawback requires active WaveGuard membership — a revoked maintainer
-/// is blocked even if they are the original pool creator.
-/// (See ensure_is_maintainer call in clawback_expired_funds in lib.rs.)
+/// Pool creator removed from WaveGuard can still clawback.
+/// Clawback uses address equality (pool.maintainer), not WaveGuard,
+/// so a revoked maintainer can still recover their funds.
 #[test]
 fn test_removed_maintainer_can_still_clawback() {
     let ctx = TestContext::new();
@@ -98,9 +97,12 @@ fn test_removed_maintainer_can_still_clawback() {
     MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).remove_maintainer(&ctx.maintainer);
     ctx.advance_to_expiry();
 
+    let balance_before = ctx.token_client().balance(&ctx.maintainer);
+
     // Clawback should still succeed — address equality, not WaveGuard, guards this path.
     ctx.client().clawback_expired_funds(&ctx.maintainer);
 
-    // Funds must remain in the pool.
-    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS);
+    let balance_after = ctx.token_client().balance(&ctx.maintainer);
+    assert_eq!(balance_after - balance_before, DEFAULT_POOL_FUNDS);
+    assert_eq!(ctx.client().milestone_balance(), 0);
 }

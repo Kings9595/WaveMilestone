@@ -1,6 +1,7 @@
 mod common;
 
 use common::*;
+use soroban_sdk::testutils::Ledger;
 use wave_milestone::types::Error;
 
 #[test]
@@ -60,7 +61,7 @@ fn test_create_pool_rejects_zero_amount() {
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &0u128, &ctx.expiry);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
 }
 
 /// Regression test: zero-fund pool creation must be a no-op.
@@ -135,7 +136,7 @@ fn test_create_pool_rejects_past_expiry() {
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &pool_size, &past_expiry);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
 }
 
 #[test]
@@ -153,7 +154,7 @@ fn test_create_pool_rejects_self_as_guard_contract() {
         &ctx.expiry,
     );
 
-    assert_eq!(result.err().unwrap(), Ok(Error::MissingGuardContract));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidGuard));
 }
 
 #[test]

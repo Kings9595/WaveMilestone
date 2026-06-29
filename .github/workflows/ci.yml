@@ -60,6 +60,37 @@ jobs:
       - name: Run contract integration tests
         run: cargo test --package wave-milestone --test '*' -- --nocapture
 
+  contract-regression:
+    name: Contract Regression Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            contracts/wave_milestone
+
+      - name: Run full contract test suite (unit + integration)
+        run: cargo test --package wave-milestone -- --nocapture
+
+      - name: Validate ledger snapshots
+        run: |
+          if ! git diff --quiet --exit-code contracts/wave_milestone/test_snapshots/; then
+            echo "❌ Ledger snapshots have changed! This may indicate a regression in contract behavior."
+            echo "Changed files:"
+            git diff --stat contracts/wave_milestone/test_snapshots/
+            exit 1
+          fi
+          echo "✅ Ledger snapshots match committed versions — no regression detected."
+
   test:
     name: Test
     runs-on: ubuntu-latest

@@ -1,6 +1,7 @@
 mod common;
 
 use common::*;
+use soroban_sdk::testutils::Ledger;
 use wave_milestone::types::Error;
 
 // ── PoolNotFound (1) ─────────────────────────────────────────
@@ -28,7 +29,7 @@ fn test_error_pool_not_expired() {
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
     // Clawback before expiry — ledger is still before ctx.expiry
     let result = ctx.client().try_clawback_expired_funds(&ctx.maintainer);
-    assert_eq!(result.err().unwrap(), Ok(Error::ClawbackTooEarly));
+    assert_eq!(result.err().unwrap(), Ok(Error::PoolNotExpired));
 }
 
 // ── BountyAlreadyClaimed (3) ─────────────────────────────────
@@ -85,13 +86,10 @@ fn test_error_unauthorized_maintainer_release_bounty() {
 fn test_error_unauthorized_caller_clawback() {
     let ctx = TestContext::new();
     ctx.fund_pool(DEFAULT_POOL_FUNDS);
-    // Register stranger as a WaveGuard maintainer so the WaveGuard check passes,
-    // but stranger is not the pool owner — must get UnauthorizedCaller.
-    MockWaveGuardClient::new(&ctx.env, &ctx.guard_id).add_maintainer(&ctx.stranger);
+    // stranger is not the pool maintainer — clawback uses address equality, not WaveGuard.
     ctx.advance_to_expiry();
-    // stranger is not a WaveGuard maintainer, so UnauthorizedMaintainer fires first
     let result = ctx.client().try_clawback_expired_funds(&ctx.stranger);
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 }
 
 // ── NoFundsToClawback (7) ────────────────────────────────────
@@ -116,14 +114,14 @@ fn test_error_transfer_failed_discriminant() {
     assert_eq!(Error::TransferFailed as u32, 9);
 }
 
-// ── InvalidAmount (9) ────────────────────────────────────────
+// ── InvalidAmount (10) ───────────────────────────────────────
 
 #[test]
 fn test_error_invalid_amount_create_pool() {
     let ctx = TestContext::new();
     let result =
         ctx.client().try_create_milestone_pool(&ctx.maintainer, &ctx.guard_id, &ctx.token_id, &0u128, &ctx.expiry);
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
 }
 
 #[test]
@@ -134,11 +132,13 @@ fn test_error_invalid_amount_release_bounty() {
     assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
 }
 
-// ── ExpiryInPast (10) ────────────────────────────────────────
+// ── ExpiryInPast (11) ────────────────────────────────────────
 
 #[test]
 fn test_error_expiry_in_past() {
     let ctx = TestContext::new();
+    // Set a non-zero ledger timestamp so expiry == 0 doesn't fire first
+    ctx.env.ledger().set_timestamp(100_000);
     ctx.token_client().mint(&ctx.maintainer, &DEFAULT_POOL_FUNDS);
     let past_expiry = ctx.env.ledger().timestamp(); // now == not in the future
     let result = ctx.client().try_create_milestone_pool(
@@ -148,5 +148,5 @@ fn test_error_expiry_in_past() {
         &DEFAULT_POOL_FUNDS,
         &past_expiry,
     );
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+    assert_eq!(result.err().unwrap(), Ok(Error::ExpiryInPast));
 }

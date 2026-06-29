@@ -204,24 +204,99 @@ See [Testing](#testing) for details on the integration test suite.
 
 ### `create_milestone_pool`
 
-Initializes a new milestone escrow pool. Transfers `total_funds` from the caller to the contract's asset vault.
+Initializes a new milestone escrow pool. Transfers `total_funds` from the caller to the contract's asset vault, links to a WaveGuard registry identity, and sets the milestone deadline.
 
 ```rust
 fn create_milestone_pool(
-    e: Env,
+    env: Env,
+    maintainer: Address,
     guard_contract: Address,
     asset: Address,
     total_funds: u128,
+    expiry: u64,
 ) -> Result<(), Error>;
 ```
 
-| Parameter | Description |
-|-----------|-------------|
-| `guard_contract` | Address of the deployed [WaveGuard](https://github.com/anomalyco/waveguard) contract instance. |
-| `asset` | Stellar Asset Contract (SAC) token ID to use for payouts. |
-| `total_funds` | Total budget to lock for this milestone (in the smallest unit of `asset`). |
+#### Parameters
 
-**Auth:** `maintainer.require_auth()` (verified via WaveGuard).
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `maintainer` | `Address` | Stellar address of the pool creator. Must be registered in WaveGuard. |
+| `guard_contract` | `Address` | Address of the deployed [WaveGuard](https://github.com/anomalyco/waveguard) contract instance. Cannot be the same as the WaveMilestone contract. |
+| `asset` | `Address` | Stellar Asset Contract (SAC) token ID to use for payouts. Must be a trusted SAC instance. |
+| `total_funds` | `u128` | Total budget to lock for this milestone (in the smallest unit of `asset`, e.g. stroops). Must be > 0. |
+| `expiry` | `u64` | Unix timestamp (in seconds) after which unclaimed funds can be clawed back. Must be strictly in the future. |
+
+#### Auth
+
+- `maintainer.require_auth()` — the caller must sign the transaction.
+- WaveGuard `is_maintainer` check — the caller must be registered as an active maintainer in the WaveGuard registry.
+
+#### Step-by-Step Guide
+
+1. **Prerequisites:**
+   - Deploy a [WaveGuard](https://github.com/anomalyco/waveguard) contract instance and register at least one maintainer address.
+   - Deploy or identify a Stellar Asset Contract (SAC) for the token you want to use for payouts.
+   - Ensure the maintainer address holds sufficient tokens (`≥ total_funds`) and has the deployer identity funded with XLM for transaction fees.
+
+2. **Compute the `expiry` timestamp:**
+   ```bash
+   # Example: 30 days from now (Unix seconds)
+   date -d "+30 days" +%s
+   ```
+
+3. **Invoke the function:**
+   ```bash
+   soroban contract invoke \
+       --id <WAVEMILESTONE_CONTRACT_ID> \
+       --source <MAINTAINER_KEY> \
+       --network-passphrase "Test SDF Network ; September 2015" \
+       --rpc-url https://soroban-testnet.stellar.org \
+       -- \
+       create_milestone_pool \
+       --maintainer <MAINTAINER_ADDRESS> \
+       --guard_contract <WAVEGUARD_ID> \
+       --asset <SAC_TOKEN_ID> \
+       --total_funds <AMOUNT> \
+       --expiry <UNIX_TIMESTAMP>
+   ```
+
+4. **Verify the pool:**
+   ```bash
+   soroban contract invoke \
+       --id <WAVEMILESTONE_CONTRACT_ID> \
+       --source <MAINTAINER_KEY> \
+       --network-passphrase "Test SDF Network ; September 2015" \
+       --rpc-url https://soroban-testnet.stellar.org \
+       -- \
+       milestone_info
+   ```
+
+#### Example
+
+```rust
+// Funds: 10,000 USDC (using 7-decimal places → 100_000_000_000 stroops)
+// Expiry: Unix timestamp for 30 days from creation
+client.create_milestone_pool(
+    &maintainer,       // Pool creator / maintainer
+    &guard_contract,   // Deployed WaveGuard address
+    &usdc_token,       // USDC Stellar Asset Contract
+    &100_000_000_000u128, // 10,000 USDC in smallest unit
+    &1_700_000_000u64, // Expiry timestamp
+);
+```
+
+#### Errors
+
+| Error | Condition |
+|-------|-----------|
+| `UnauthorizedMaintainer` | Caller is not registered in WaveGuard. |
+| `InvalidGuard` | `guard_contract` equals the WaveMilestone contract's own address. |
+| `InvalidAmount` | `total_funds` is zero. |
+| `InvalidExpiry` | `expiry` is zero. |
+| `ExpiryInPast` | `expiry` is ≤ current ledger timestamp. |
+| `PoolAlreadyExists` | A milestone pool has already been created (singleton contract). |
+| `TransferFailed` | Maintainer has insufficient token balance. |
 
 ---
 
@@ -257,10 +332,23 @@ fn release_issue_bounty(
 Returns unclaimed funds to the maintainer after a milestone deadline passes.
 
 ```rust
-fn clawback_expired_funds(e: Env) -> Result<(), Error>;
+fn clawback_expired_funds(env: Env, maintainer: Address) -> Result<(), Error>;
 ```
 
-**Auth:** `maintainer.require_auth()`. Only callable after milestone expiry.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `maintainer` | `Address` | The original pool creator. Must match `pool.maintainer` exactly. |
+
+**Auth:** `maintainer.require_auth()`. Only callable after milestone expiry. WaveGuard is NOT checked — clawback uses direct address equality against `pool.maintainer` so that a compromised WaveGuard registry cannot block fund recovery.
+
+#### Errors
+
+| Error | Condition |
+|-------|-----------|
+| `PoolNotFound` | No milestone pool has been created. |
+| `PoolNotExpired` | Current ledger timestamp is before or at `pool.expiry`. |
+| `UnauthorizedCaller` | `maintainer` does not match `pool.maintainer`. |
+| `NoFundsToClawback` | Remaining balance is zero (fully claimed or already clawed back). |
 
 ---
 
