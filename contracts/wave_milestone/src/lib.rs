@@ -8,7 +8,7 @@ use events::{
     BountyReleasedEvent, FundsClawedBackEvent, PoolCreatedEvent, TOPIC_BOUNTY_RELEASED,
     TOPIC_FUNDS_CLAWED_BACK, TOPIC_POOL_CREATED,
 };
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol, Vec};
 
 use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardClient};
 
@@ -330,5 +330,26 @@ impl WaveMilestoneContract {
     /// Returns the full milestone metadata, or `None` if uninitialized.
     pub fn milestone_info(env: Env) -> Option<MilestonePool> {
         env.storage().instance().get::<_, MilestonePool>(&DataKey::Pool)
+    }
+
+    /// Returns claim records for the given `(repo_hash, issue_id)` pairs.
+    ///
+    /// Each element corresponds to the matching `issue_ids` entry:
+    /// - `Some(IssueClaim)` — a claim record exists for that issue.
+    /// - `None` — no claim has been recorded yet.
+    ///
+    /// Reads from **Persistent** storage (post CM-01 fix).  Issue IDs
+    /// created before the storage migration will not appear here.
+    pub fn get_claim_history(
+        env: Env,
+        repo_hash: BytesN<32>,
+        issue_ids: Vec<u32>,
+    ) -> Vec<Option<IssueClaim>> {
+        let mut results = Vec::new(&env);
+        for issue_id in issue_ids.iter() {
+            let key = DataKey::IssueClaim(repo_hash.clone(), issue_id);
+            results.push_back(env.storage().persistent().get::<_, IssueClaim>(&key));
+        }
+        results
     }
 }
