@@ -88,8 +88,8 @@ fn test_consecutive_bounties_different_issues() {
     assert_eq!(ctx.client().milestone_balance(), expected_remaining);
 }
 
-/// Issue #109: Sending a bounty to the contract itself must be rejected —
-/// tokens would be trapped with no recovery path.
+/// Sending a bounty that exceeds the remaining pool balance must be rejected
+/// and leave the pool untouched.
 #[test]
 fn test_release_bounty_exceeds_remaining_balance_rejected() {
     let ctx = TestContext::new();
@@ -97,9 +97,10 @@ fn test_release_bounty_exceeds_remaining_balance_rejected() {
     ctx.fund_pool(pool_size);
 
     let result =
-        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.contract_id, &DEFAULT_BOUNTY);
+        ctx.client().try_release_issue_bounty(&ctx.maintainer, &ctx.repo_hash, &1u32, &ctx.developer, &DEFAULT_BOUNTY);
 
-    assert_eq!(ctx.client().milestone_balance(), DEFAULT_POOL_FUNDS - DEFAULT_BOUNTY);
+    assert_eq!(result.err().unwrap(), Ok(Error::InsufficientPoolBalance));
+    assert_eq!(ctx.client().milestone_balance(), pool_size);
 }
 
 /// Issue #22: `is_claimed` must return `false` before release and `true`

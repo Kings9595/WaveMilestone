@@ -26,7 +26,7 @@ fn test_milestone_balance_after_release() {
 fn test_milestone_balance_after_multiple_releases() {
     let ctx = TestContext::new();
     let pool_size = 100_000_000_000u128;
-    let bounties = vec![10_000_000_000u128, 20_000_000_000u128, 15_000_000_000u128];
+    let bounties = [10_000_000_000u128, 20_000_000_000u128, 15_000_000_000u128];
 
     ctx.fund_pool(pool_size);
     assert_eq!(ctx.client().milestone_balance(), pool_size);

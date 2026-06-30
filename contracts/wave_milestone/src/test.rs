@@ -170,7 +170,7 @@ fn test_create_pool_rejects_zero_amount() {
         &t.expiry,
     );
 
-    assert_eq!(result.err().unwrap(), Ok(Error::InvalidPoolCreationInput));
+    assert_eq!(result.err().unwrap(), Ok(Error::InvalidAmount));
 }
 
 #[test]
@@ -583,7 +583,7 @@ fn test_revoked_maintainer_cannot_release_bounty() {
 /// Clawback intentionally bypasses WaveGuard to isolate fund recovery from a
 /// potential WaveGuard compromise (pool.maintainer address equality is the guard).
 #[test]
-fn test_revoked_maintainer_cannot_clawback() {
+fn test_revoked_maintainer_can_still_clawback() {
     let t = setup();
     let pool_size: u128 = 10_000_000_000;
     fund_pool(&t, pool_size);
@@ -596,7 +596,11 @@ fn test_revoked_maintainer_cannot_clawback() {
         .clawback_expired_funds(&t.maintainer);
     let after = MockTokenClient::new(&t.env, &t.token_id).balance(&t.maintainer);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedMaintainer));
+    assert_eq!(after - before, pool_size);
+    assert_eq!(
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance(),
+        0,
+    );
 }
 
 /// A second, separately-authorized maintainer (a colluding or rogue
@@ -615,7 +619,7 @@ fn test_rogue_co_maintainer_cannot_clawback_others_pool() {
     let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id)
         .try_clawback_expired_funds(&t.stranger);
 
-    assert_eq!(result.err().unwrap(), Ok(Error::NotPoolMaintainer));
+    assert_eq!(result.err().unwrap(), Ok(Error::UnauthorizedCaller));
 
     // Escrow stays put for the rightful owner.
     let remaining = WaveMilestoneContractClient::new(&t.env, &t.contract_id).milestone_balance();
@@ -866,6 +870,233 @@ fn test_release_bounty_accepts_nonzero_repo_hash() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Claim Guard Durable Edge Cases (Issue #179)
+// ─────────────────────────────────────────────────────────────
+
+/// Claim guard must persist after the pool itself has expired.
+/// Expiry is a pool-level concept; claim records are independent of pool expiry.
+#[test]
+fn test_claim_guard_survives_pool_expiry() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 2_500_000_000;
+
+    fund_pool(&t, pool_size);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+
+    // Jump past pool expiry
+    t.env.ledger().set_timestamp(t.expiry + 1);
+
+    assert!(
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32),
+        "claim must still be visible after pool expiry"
+    );
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+    assert_eq!(
+        result.err().unwrap(),
+        Ok(Error::BountyAlreadyClaimed),
+        "duplicate-claim guard must remain active after pool expiry"
+    );
+}
+
+/// All claims in a multi-claim pool must survive ledger advancement,
+/// not just the most recent one.
+#[test]
+fn test_multiple_claims_survive_ledger_advancement() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 2_500_000_000;
+
+    fund_pool(&t, pool_size);
+
+    // Make three claims in sequence
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &2u32,
+        &t.developer,
+        &bounty,
+    );
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &3u32,
+        &t.developer,
+        &bounty,
+    );
+
+    // Jump far past expiry
+    t.env.ledger().set_timestamp(t.expiry + 10_000_000);
+
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &2u32));
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &3u32));
+
+    for issue_id in 1u32..=3 {
+        let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+            &t.maintainer,
+            &t.repo_hash,
+            &issue_id,
+            &t.developer,
+            &bounty,
+        );
+        assert_eq!(
+            result.err().unwrap(),
+            Ok(Error::BountyAlreadyClaimed),
+            "duplicate claim for issue {issue_id} must be rejected after ledger advancement"
+        );
+    }
+}
+
+/// Claims made in different repos must all survive ledger advancement independently.
+#[test]
+fn test_cross_repo_claims_survive_ledger_advancement() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let repo_b = BytesN::from_array(&t.env, &[2u8; 32]);
+    let repo_c = BytesN::from_array(&t.env, &[3u8; 32]);
+
+    fund_pool(&t, pool_size);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &1_000_000_000,
+    );
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &repo_b,
+        &1u32,
+        &t.developer,
+        &2_000_000_000,
+    );
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &repo_c,
+        &5u32,
+        &t.developer,
+        &3_000_000_000,
+    );
+
+    t.env.ledger().set_timestamp(t.expiry + 10_000_000);
+
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32));
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&repo_b, &1u32));
+    assert!(WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&repo_c, &5u32));
+
+    for (repo, issue) in [(&t.repo_hash, 1u32), (&repo_b, 1u32), (&repo_c, 5u32)] {
+        let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+            &t.maintainer,
+            repo,
+            &issue,
+            &t.developer,
+            &1_000_000_000,
+        );
+        assert_eq!(result.err().unwrap(), Ok(Error::BountyAlreadyClaimed));
+    }
+}
+
+/// Claim guard must still prevent duplicate claims after clawback has occurred.
+#[test]
+fn test_claim_guard_survives_clawback() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 2_500_000_000;
+
+    fund_pool(&t, pool_size);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+
+    t.env.ledger().set_timestamp(t.expiry + 1);
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).clawback_expired_funds(&t.maintainer);
+
+    assert!(
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32),
+        "claim must survive clawback"
+    );
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+    assert_eq!(
+        result.err().unwrap(),
+        Ok(Error::BountyAlreadyClaimed),
+        "duplicate claim must be rejected even after clawback"
+    );
+}
+
+/// Claim records must persist even when the ledger is advanced an extreme amount,
+/// well past any conceivable TTL window.
+#[test]
+fn test_claim_guard_survives_extreme_ledger_advance() {
+    let t = setup();
+    let pool_size: u128 = 10_000_000_000;
+    let bounty: u128 = 2_500_000_000;
+
+    fund_pool(&t, pool_size);
+
+    WaveMilestoneContractClient::new(&t.env, &t.contract_id).release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+
+    // Advance ledger by an extreme amount (simulating years of ledger time)
+    t.env.ledger().set_timestamp(t.expiry + 100_000_000_000u64);
+
+    assert!(
+        WaveMilestoneContractClient::new(&t.env, &t.contract_id).is_claimed(&t.repo_hash, &1u32),
+        "claim must persist after extreme ledger advancement"
+    );
+
+    let result = WaveMilestoneContractClient::new(&t.env, &t.contract_id).try_release_issue_bounty(
+        &t.maintainer,
+        &t.repo_hash,
+        &1u32,
+        &t.developer,
+        &bounty,
+    );
+    assert_eq!(result.err().unwrap(), Ok(Error::BountyAlreadyClaimed));
+}
+
+// ─────────────────────────────────────────────────────────────
 // Pool Creation Validation (Issues: expiry, maintainer, guard)
 // ─────────────────────────────────────────────────────────────
 
@@ -874,6 +1105,8 @@ fn test_release_bounty_accepts_nonzero_repo_hash() {
 #[test]
 fn test_create_pool_rejects_expiry_at_current_time() {
     let t = setup();
+    // Set a non-zero ledger timestamp so expiry == 0 doesn't fire first
+    t.env.ledger().set_timestamp(100_000);
     let now = t.env.ledger().timestamp();
     MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &1_000_000_000u128);
 
@@ -892,6 +1125,8 @@ fn test_create_pool_rejects_expiry_at_current_time() {
 #[test]
 fn test_create_pool_rejects_expiry_in_past() {
     let t = setup();
+    // Set a non-zero ledger timestamp so expiry == 0 doesn't fire first
+    t.env.ledger().set_timestamp(100_000);
     let past = t.env.ledger().timestamp().saturating_sub(1);
     MockTokenClient::new(&t.env, &t.token_id).mint(&t.maintainer, &1_000_000_000u128);
 

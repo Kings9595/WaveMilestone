@@ -11,7 +11,7 @@ use events::{
 };
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Symbol, Vec};
 
-use types::{ClaimRecord, DataKey, Error, MilestonePool, TokenClient, WaveGuardClient};
+use types::{DataKey, Error, IssueClaim, MilestonePool, TokenClient, WaveGuardClient};
 
 /// Checks that `address` is registered as an active maintainer in the
 /// WaveGuard registry at `guard_contract`.  Returns
@@ -154,9 +154,25 @@ impl WaveMilestoneContract {
     /// contract vault, links to a WaveGuard registry for access control,
     /// and sets a milestone `expiry` (ledger timestamp, Unix seconds).
     ///
+    /// # Parameters
+    /// - `maintainer`: Stellar address of the pool creator. Must be registered in WaveGuard.
+    /// - `guard_contract`: Deployed WaveGuard instance address. Must not be self.
+    /// - `asset`: Stellar Asset Contract (SAC) token address for payouts.
+    /// - `total_funds`: Total budget in smallest token unit. Must be > 0.
+    /// - `expiry`: Unix timestamp (seconds) after which clawback is allowed. Must be in the future.
+    ///
     /// # Auth
     /// - `maintainer.require_auth()` — the caller must sign.
     /// - WaveGuard `is_maintainer` check passes.
+    ///
+    /// # Errors
+    /// - [`Error::UnauthorizedMaintainer`] — caller not registered in WaveGuard.
+    /// - [`Error::InvalidGuard`] — guard_contract equals this contract's address.
+    /// - [`Error::InvalidAmount`] — total_funds is zero.
+    /// - [`Error::InvalidExpiry`] — expiry is zero.
+    /// - [`Error::ExpiryInPast`] — expiry ≤ current ledger timestamp.
+    /// - [`Error::PoolAlreadyExists`] — pool already initialized (singleton).
+    /// - [`Error::TransferFailed`] — insufficient token balance.
     ///
     /// # Trust Assumptions
     /// - `guard_contract` must be a deployed, trusted WaveGuard instance.
@@ -164,6 +180,17 @@ impl WaveMilestoneContract {
     ///   unrestricted access to this pool.
     /// - `asset` must be a trusted Stellar Asset Contract (SAC).  A
     ///   malicious token could re-enter or silently fail transfers.
+    ///
+    /// # Example
+    /// ```rust
+    /// client.create_milestone_pool(
+    ///     &maintainer,
+    ///     &guard_contract,
+    ///     &usdc_token,
+    ///     &100_000_000_000u128, // 10,000 USDC
+    ///     &1_700_000_000u64,    // 30 days from now
+    /// );
+    /// ```
     pub fn create_milestone_pool(
         env: Env,
         maintainer: Address,
@@ -193,6 +220,9 @@ impl WaveMilestoneContract {
         }
 
         // ── Input validation ──
+        if total_funds == 0 {
+            return Err(Error::InvalidAmount);
+        }
         let now = env.ledger().timestamp();
         if expiry == 0 {
             return Err(Error::InvalidExpiry);
@@ -354,8 +384,8 @@ impl WaveMilestoneContract {
 
     /// Returns unclaimed funds to the maintainer after milestone expiry.
     ///
-    /// Only callable by the original `pool.maintainer` while they remain an
-    /// active WaveGuard maintainer, and only after `pool.expiry` has passed.
+    /// Only callable by the original `pool.maintainer` (address equality check,
+    /// NOT WaveGuard), and only after `pool.expiry` has passed.
     /// Transfers the full remaining balance back to the maintainer and zeroes
     /// out the available pool.
     ///
@@ -378,12 +408,11 @@ impl WaveMilestoneContract {
             .get::<_, MilestonePool>(&DataKey::Pool)
             .ok_or(Error::PoolNotFound)?;
 
-        // ── Ownership check (no WaveGuard re-check — see trust assumptions in MilestonePool) ──
+        // ── Ownership check ──
         // Clawback is restricted to the exact pool creator by address equality.
         // WaveGuard is intentionally NOT consulted here to prevent a compromised
         // or revoked WaveGuard registry from locking the pool creator out of their funds.
         if maintainer != pool.maintainer {
-            ensure_is_maintainer(&env, &pool.guard_contract, &maintainer)?;
             return Err(Error::UnauthorizedCaller);
         }
 

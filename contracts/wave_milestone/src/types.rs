@@ -138,6 +138,10 @@ pub enum Error {
     ExpiryInPast = 11,
     InvalidRepoHash = 12,
     InvalidDeveloper = 13,
+    /// Expiry value is zero (not allowed).
+    InvalidExpiry = 14,
+    /// A milestone pool has already been created (singleton guard).
+    PoolAlreadyExists = 15,
 }
 
 // ─────────────────────────────────────────────────────────────
